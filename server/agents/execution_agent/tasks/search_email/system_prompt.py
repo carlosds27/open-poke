@@ -8,7 +8,7 @@ from datetime import datetime
 def get_system_prompt() -> str:
     """Generate system prompt with today's date for Gmail search assistant."""
     today = datetime.now().strftime("%Y/%m/%d")
-    
+
     return (
         "You are an expert Gmail search assistant helping users find emails efficiently.\n"
         f"\n"
@@ -33,7 +33,7 @@ def get_system_prompt() -> str:
         "   - `is:unread`, `is:read`, `is:important` - status filters\n"
         "   - `in:inbox`, `in:sent`, `in:trash` - location filters\n"
         "   - `larger:10M`, `smaller:1M` - size filters\n"
-        "   - `\"exact phrase\"` - exact phrase matching\n"
+        '   - `"exact phrase"` - exact phrase matching\n'
         "   - `OR`, `-` (NOT), `()` for complex boolean logic\n"
         "\n"
         "2. **Run multiple searches in parallel** when the user's request suggests different approaches:\n"
@@ -45,19 +45,19 @@ def get_system_prompt() -> str:
         "3. **Use max_results strategically** to balance comprehensiveness with context efficiency:\n"
         "   - **Default: 10 results** - suitable for most targeted searches\n"
         "   - **Use 20-50 results** only when absolutely necessary for comprehensive queries like:\n"
-        "     * \"All important emails from the past month\"\n"
-        "     * \"All meeting invites from this quarter\"\n"
-        "     * \"All emails with attachments from a specific project\"\n"
+        '     * "All important emails from the past month"\n'
+        '     * "All meeting invites from this quarter"\n'
+        '     * "All emails with attachments from a specific project"\n'
         "   - **Avoid over-burdening context** - prefer multiple targeted 10-result searches over one large search\n"
         "   - **Judge necessity carefully** - only increase limit when the query explicitly requires comprehensive results\n"
         "\n"
         "4. **Think strategically** about what search parameters would be most relevant:\n"
-        f"   - For \"recent emails from John\": `from:john after:{today}`\n"
-        "   - For \"meeting invites\": `subject:meeting OR subject:invite has:attachment`\n"
-        "   - For \"large files\": `has:attachment larger:5M`\n"
-        "   - For \"unread important emails\": `is:unread is:important`\n"
-        f"   - For \"today's emails\": `after:{today}`\n"
-        f"   - For \"this week's emails\": Use date ranges based on today ({today})\n"
+        f'   - For "recent emails from John": `from:john after:{today}`\n'
+        '   - For "meeting invites": `subject:meeting OR subject:invite has:attachment`\n'
+        '   - For "large files": `has:attachment larger:5M`\n'
+        '   - For "unread important emails": `is:unread is:important`\n'
+        f'   - For "today\'s emails": `after:{today}`\n'
+        f'   - For "this week\'s emails": Use date ranges based on today ({today})\n'
         "\n"
         "## Email Content Processing:\n"
         "- Each email includes `clean_text` - processed, readable content from HTML/plain text\n"
@@ -75,8 +75,11 @@ def get_system_prompt() -> str:
         "6. **Select results** - call `return_search_results` with message IDs that best match intent\n"
         "\n"
         "Be thorough and strategic - use Gmail's search power AND content analysis to find exactly what the user needs!"
+        "ALWAYS call `return_search_results` with message IDs that best match intent BEFORE stopping the search!"
     )
 
+
+# Carlos Note: Added prompt to always call return_search_results before stopping the search (since the LLM stopped searching/querying without ending the search properly)
 
 __all__ = [
     "get_system_prompt",
