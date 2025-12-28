@@ -8,7 +8,12 @@ from .conversation import (
     schedule_summarization,
 )
 from .conversation.chat_handler import handle_chat_request
-from .execution import AgentRoster, ExecutionAgentLogStore, get_agent_roster, get_execution_agent_logs
+from .execution import (
+    AgentRoster,
+    ExecutionAgentLogStore,
+    get_agent_roster,
+    get_execution_agent_logs,
+)
 from .gmail import (
     GmailSeenStore,
     ImportantEmailWatcher,
@@ -23,7 +28,7 @@ from .gmail import (
 from .trigger_scheduler import get_trigger_scheduler
 from .triggers import get_trigger_service
 from .timezone_store import TimezoneStore, get_timezone_store
-
+from .database import MongoDB
 
 __all__ = [
     "ConversationLog",
@@ -49,4 +54,5 @@ __all__ = [
     "get_trigger_service",
     "TimezoneStore",
     "get_timezone_store",
+    "MongoDB",
 ]

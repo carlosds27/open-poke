@@ -59,24 +59,40 @@ class Settings(BaseModel):
 
     # Credentials / integrations
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
-    composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
+    composio_gmail_auth_config_id: Optional[str] = Field(
+        default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID")
+    )
     composio_api_key: Optional[str] = Field(default=os.getenv("COMPOSIO_API_KEY"))
+    mongodb_user: Optional[str] = Field(default=os.getenv("MONGODB_USER"))
+    mongodb_pass: Optional[str] = Field(default=os.getenv("MONGODB_PASS"))
 
     # HTTP behaviour
-    cors_allow_origins_raw: str = Field(default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "*"))
+    cors_allow_origins_raw: str = Field(
+        default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "*")
+    )
     enable_docs: bool = Field(default=os.getenv("OPENPOKE_ENABLE_DOCS", "1") != "0")
     docs_url: Optional[str] = Field(default=os.getenv("OPENPOKE_DOCS_URL", "/docs"))
 
     # Summarisation controls
-    conversation_summary_threshold: int = Field(default=100)
+    conversation_summary_threshold: int = Field(default=50)
     conversation_summary_tail_size: int = Field(default=10)
+
+    # MongoDB
+    mongodb_database: str = Field(default=os.getenv("MONGODB_DATABASE", "openpoke"))
+    mongodb_uri: str = Field(
+        default=os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+    )
 
     @property
     def cors_allow_origins(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""
         if self.cors_allow_origins_raw.strip() in {"", "*"}:
             return ["*"]
-        return [origin.strip() for origin in self.cors_allow_origins_raw.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.cors_allow_origins_raw.split(",")
+            if origin.strip()
+        ]
 
     @property
     def resolved_docs_url(self) -> Optional[str]:
