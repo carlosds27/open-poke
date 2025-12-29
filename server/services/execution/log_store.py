@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-import re
-import threading
+from datetime import datetime, timezone
 from html import escape, unescape
-from pathlib import Path
-from typing import Dict, Iterator, List, Tuple
+from typing import Iterator, List, Optional, Tuple
 
+from ..database.mongodb import MongoDB
 from ...logging_config import logger
 from ...utils.timezones import now_in_user_timezone
-
-
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_EXECUTION_LOG_DIR = _DATA_DIR / "execution_agents"
-
-
-def _slugify(name: str) -> str:
-    """Convert agent name to filesystem-safe slug."""
-    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in name.strip()).strip("-")
-    while "--" in slug:
-        slug = slug.replace("--", "-")
-    return slug or "agent"
 
 
 def _encode_payload(payload: str) -> str:
@@ -36,78 +23,56 @@ def _decode_payload(payload: str) -> str:
     return unescape(payload).replace("\\n", "\n")
 
 
-_ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
-
-
 class ExecutionAgentLogStore:
     """Append-only journal for execution agents with XML-style tags."""
 
-    def __init__(self, base_dir: Path):
-        self._base_dir = base_dir
-        self._locks: dict[str, threading.Lock] = {}
-        self._global_lock = threading.Lock()
-        self._ensure_directory()
+    def __init__(self):
+        self._mongodb = MongoDB.get_instance()
+        self._collection = self._mongodb.get_collection_by_name("execution_agent_logs")
+        self._ensure_indexes()
 
-    def _ensure_directory(self) -> None:
+    def _ensure_indexes(self) -> None:
+        """Create indexes for efficient queries."""
         try:
-            self._base_dir.mkdir(parents=True, exist_ok=True)
+            # Index for agent_name and sequence ordering
+            self._collection.create_index([("agent_name", 1), ("sequence", 1)])
+            # Index for listing distinct agents
+            self._collection.create_index([("agent_name", 1)])
         except Exception as exc:
-            logger.warning(f"Failed to create directory: {exc}")
+            logger.warning(
+                "Execution agent log index creation failed",
+                extra={"error": str(exc)},
+            )
 
-    def _lock_for(self, agent_name: str) -> threading.Lock:
-        """Get or create a lock for an agent."""
-        slug = _slugify(agent_name)
-        with self._global_lock:
-            if slug not in self._locks:
-                self._locks[slug] = threading.Lock()
-            return self._locks[slug]
-
-    def _log_path(self, agent_name: str) -> Path:
-        """Get log file path for an agent."""
-        return self._base_dir / f"{_slugify(agent_name)}.log"
+    def _get_next_sequence(self, agent_name: str) -> int:
+        """Get the next sequence number for an agent."""
+        max_doc = self._collection.find_one(
+            {"agent_name": agent_name}, sort=[("sequence", -1)]
+        )
+        return 1 if max_doc is None else max_doc.get("sequence", 0) + 1
 
     def _append(self, agent_name: str, tag: str, payload: str) -> None:
         """Append an entry with the given tag."""
-        encoded = _encode_payload(str(payload))
         timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
-        entry = f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
+        sequence = self._get_next_sequence(agent_name)
+        encoded_payload = _encode_payload(str(payload))
 
-        with self._lock_for(agent_name):
-            try:
-                with self._log_path(agent_name).open("a", encoding="utf-8") as handle:
-                    handle.write(entry)
-            except Exception as exc:
-                logger.error(f"Failed to append to log: {exc}")
-
-    def _parse_line(self, line: str) -> Optional[Tuple[str, str, str]]:
-        """Parse a single log line."""
-        stripped = line.strip()
-        if not (stripped.startswith("<") and "</" in stripped):
-            return None
-
-        open_end = stripped.find(">")
-        close_start = stripped.rfind("</")
-        close_end = stripped.rfind(">")
-
-        if open_end == -1 or close_start == -1 or close_end == -1:
-            return None
-
-        open_tag_content = stripped[1:open_end]
-        if " " in open_tag_content:
-            tag, attr_string = open_tag_content.split(" ", 1)
-        else:
-            tag, attr_string = open_tag_content, ""
-
-        closing_tag = stripped[close_start + 2 : close_end]
-        if closing_tag != tag:
-            return None
-
-        attributes: Dict[str, str] = {
-            match.group(1): match.group(2) for match in _ATTR_PATTERN.finditer(attr_string)
+        document = {
+            "agent_name": agent_name,
+            "tag": tag,
+            "timestamp": timestamp,
+            "payload": encoded_payload,
+            "sequence": sequence,
+            "created_at": datetime.now(timezone.utc),
         }
-        timestamp = attributes.get("timestamp", "")
-        payload = _decode_payload(stripped[open_end + 1 : close_start])
-        return tag, timestamp, payload
+
+        try:
+            self._collection.insert_one(document)
+        except Exception as exc:
+            logger.error(
+                "Failed to append to log",
+                extra={"agent_name": agent_name, "error": str(exc)},
+            )
 
     def record_request(self, agent_name: str, instructions: str) -> None:
         """Record an incoming request from the interaction agent."""
@@ -117,7 +82,9 @@ class ExecutionAgentLogStore:
         """Record an agent action (tool call)."""
         self._append(agent_name, "agent_action", description)
 
-    def record_tool_response(self, agent_name: str, tool_name: str, response: str) -> None:
+    def record_tool_response(
+        self, agent_name: str, tool_name: str, response: str
+    ) -> None:
         """Record the response from a tool."""
         self._append(agent_name, "tool_response", f"{tool_name}: {response}")
 
@@ -127,20 +94,18 @@ class ExecutionAgentLogStore:
 
     def iter_entries(self, agent_name: str) -> Iterator[Tuple[str, str, str]]:
         """Iterate over all log entries for an agent."""
-        path = self._log_path(agent_name)
-        with self._lock_for(agent_name):
-            try:
-                lines = path.read_text(encoding="utf-8").splitlines()
-            except FileNotFoundError:
-                lines = []
-            except Exception as exc:
-                logger.error(f"Failed to read log: {exc}")
-                lines = []
-
-        for line in lines:
-            parsed = self._parse_line(line)
-            if parsed is not None:
-                yield parsed
+        try:
+            cursor = self._collection.find({"agent_name": agent_name}).sort(
+                [("sequence", 1)]
+            )
+            for doc in cursor:
+                decoded_payload = _decode_payload(doc["payload"])
+                yield doc["tag"], doc.get("timestamp", ""), decoded_payload
+        except Exception as exc:
+            logger.error(
+                "Failed to read log",
+                extra={"agent_name": agent_name, "error": str(exc)},
+            )
 
     def load_transcript(self, agent_name: str) -> str:
         """Load the full transcript for inclusion in system prompt."""
@@ -148,12 +113,14 @@ class ExecutionAgentLogStore:
         for tag, timestamp, payload in self.iter_entries(agent_name):
             escaped = escape(payload, quote=False)
             if timestamp:
-                parts.append(f"<{tag} timestamp=\"{timestamp}\">{escaped}</{tag}>")
+                parts.append(f'<{tag} timestamp="{timestamp}">{escaped}</{tag}>')
             else:
                 parts.append(f"<{tag}>{escaped}</{tag}>")
         return "\n".join(parts)
 
-    def load_recent(self, agent_name: str, limit: int = 10) -> list[tuple[str, str, str]]:
+    def load_recent(
+        self, agent_name: str, limit: int = 10
+    ) -> list[tuple[str, str, str]]:
         """Load recent log entries."""
         entries = list(self.iter_entries(agent_name))
         return entries[-limit:] if entries else []
@@ -161,22 +128,31 @@ class ExecutionAgentLogStore:
     def list_agents(self) -> list[str]:
         """List all agents with logs."""
         try:
-            return sorted(path.stem for path in self._base_dir.glob("*.log"))
+            distinct_agents = self._collection.distinct("agent_name")
+            return sorted(distinct_agents)
         except Exception as exc:
-            logger.error(f"Failed to list agents: {exc}")
+            logger.error(
+                "Failed to list agents",
+                extra={"error": str(exc)},
+            )
             return []
 
     def clear_all(self) -> None:
         """Clear all execution agent logs."""
         try:
-            for log_file in self._base_dir.glob("*.log"):
-                log_file.unlink()
-            logger.info("Cleared all execution agent logs")
+            result = self._collection.delete_many({})
+            logger.info(
+                "Cleared all execution agent logs",
+                extra={"deleted_count": result.deleted_count},
+            )
         except Exception as exc:
-            logger.error(f"Failed to clear execution logs: {exc}")
+            logger.error(
+                "Failed to clear execution logs",
+                extra={"error": str(exc)},
+            )
 
 
-_execution_agent_logs = ExecutionAgentLogStore(_EXECUTION_LOG_DIR)
+_execution_agent_logs = ExecutionAgentLogStore()
 
 
 def get_execution_agent_logs() -> ExecutionAgentLogStore:

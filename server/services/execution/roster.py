@@ -1,64 +1,61 @@
 """Simple agent roster management - just a list of agent names."""
 
-import json
-import fcntl
-import time
-from pathlib import Path
-
+from ..database.mongodb import MongoDB
 from ...logging_config import logger
 
 
 class AgentRoster:
-    """Simple roster that stores agent names in a JSON file."""
+    """Simple roster that stores agent names in MongoDB."""
 
-    def __init__(self, roster_path: Path):
-        self._roster_path = roster_path
-        self._agents: list[str] = []
+    _ROSTER_ID = "main"  # Fixed ID for the single roster document
+
+    def __init__(self):
+        self._mongodb = MongoDB.get_instance()
+        self._collection = self._mongodb.get_collection_by_name("agent_roster")
+        self._ensure_indexes()
         self.load()
 
+    def _ensure_indexes(self) -> None:
+        """Create indexes for efficient queries."""
+        try:
+            # Index for roster_id lookup
+            self._collection.create_index([("roster_id", 1)], unique=True)
+        except Exception as exc:
+            logger.warning(
+                "Agent roster index creation failed",
+                extra={"error": str(exc)},
+            )
+
     def load(self) -> None:
-        """Load agent names from roster.json."""
-        if self._roster_path.exists():
-            try:
-                with open(self._roster_path, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        self._agents = [str(name) for name in data]
-            except Exception as exc:
-                logger.warning(f"Failed to load roster.json: {exc}")
+        """Load agent names from MongoDB."""
+        try:
+            doc = self._collection.find_one({"roster_id": self._ROSTER_ID})
+            if doc is not None:
+                agents = doc.get("agents", [])
+                self._agents = [str(name) for name in agents if name]
+            else:
                 self._agents = []
-        else:
+                self.save()
+        except Exception as exc:
+            logger.warning(
+                "Failed to load agent roster",
+                extra={"error": str(exc)},
+            )
             self._agents = []
-            self.save()
 
     def save(self) -> None:
-        """Save agent names to roster.json with file locking."""
-        max_retries = 5
-        retry_delay = 0.1
-
-        for attempt in range(max_retries):
-            try:
-                self._roster_path.parent.mkdir(parents=True, exist_ok=True)
-
-                # Open file and acquire exclusive lock
-                with open(self._roster_path, 'w') as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    try:
-                        json.dump(self._agents, f, indent=2)
-                        return
-                    finally:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-
-            except BlockingIOError:
-                # Lock is held by another process
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    logger.warning("Failed to acquire lock on roster.json after retries")
-            except Exception as exc:
-                logger.warning(f"Failed to save roster.json: {exc}")
-                break
+        """Save agent names to MongoDB."""
+        try:
+            self._collection.update_one(
+                {"roster_id": self._ROSTER_ID},
+                {"$set": {"agents": self._agents}},
+                upsert=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to save agent roster",
+                extra={"error": str(exc)},
+            )
 
     def add_agent(self, agent_name: str) -> None:
         """Add an agent to the roster if not already present."""
@@ -74,17 +71,16 @@ class AgentRoster:
         """Clear the agent roster."""
         self._agents = []
         try:
-            if self._roster_path.exists():
-                self._roster_path.unlink()
+            self._collection.delete_one({"roster_id": self._ROSTER_ID})
             logger.info("Cleared agent roster")
         except Exception as exc:
-            logger.warning(f"Failed to clear roster.json: {exc}")
+            logger.warning(
+                "Failed to clear agent roster",
+                extra={"error": str(exc)},
+            )
 
 
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_ROSTER_PATH = _DATA_DIR / "execution_agents" / "roster.json"
-
-_agent_roster = AgentRoster(_ROSTER_PATH)
+_agent_roster = AgentRoster()
 
 
 def get_agent_roster() -> AgentRoster:

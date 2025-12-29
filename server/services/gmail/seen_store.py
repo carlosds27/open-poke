@@ -2,69 +2,74 @@
 
 from __future__ import annotations
 
-import json
-import threading
-from collections import deque
-from pathlib import Path
-from typing import Deque, Iterable, List, Optional, Set
+from datetime import datetime, timezone
+from typing import Iterable, List, Optional
 
+from ..database.mongodb import MongoDB
 from ...logging_config import logger
 
 
 class GmailSeenStore:
-    """Maintain a bounded set of Gmail message IDs backed by a JSON file."""
+    """Maintain a bounded set of Gmail message IDs backed by MongoDB."""
 
-    def __init__(self, path: Path, max_entries: int = 300) -> None:
-        self._path = path
+    def __init__(self, max_entries: int = 300) -> None:
         self._max_entries = max_entries
-        self._lock = threading.Lock()
-        self._entries: Deque[str] = deque()
-        self._index: Set[str] = set()
-        self._load()
+        self._mongodb = MongoDB.get_instance()
+        self._collection = self._mongodb.get_collection_by_name("gmail_seen")
+        self._ensure_indexes()
+
+    def _ensure_indexes(self) -> None:
+        """Create indexes for efficient queries."""
+        try:
+            # Index for message_id lookups
+            self._collection.create_index([("message_id", 1)], unique=True)
+            # Index for timestamp-based ordering and pruning
+            self._collection.create_index([("seen_at", 1)])
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Gmail seen-store index creation failed",
+                extra={"error": str(exc)},
+            )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def has_entries(self) -> bool:
-        with self._lock:
-            return bool(self._entries)
+        count = self._collection.count_documents({})
+        return count > 0
 
     def is_seen(self, message_id: str) -> bool:
         normalized = self._normalize(message_id)
         if not normalized:
             return False
-        with self._lock:
-            return normalized in self._index
+        doc = self._collection.find_one({"message_id": normalized})
+        return doc is not None
 
     def mark_seen(self, message_ids: Iterable[str]) -> None:
-        normalized_ids = [mid for mid in (self._normalize(mid) for mid in message_ids) if mid]
+        normalized_ids = [
+            mid for mid in (self._normalize(mid) for mid in message_ids) if mid
+        ]
         if not normalized_ids:
             return
 
-        with self._lock:
-            for message_id in normalized_ids:
-                if message_id in self._index:
-                    # Refresh recency by removing and re-appending
-                    try:
-                        self._entries.remove(message_id)
-                    except ValueError:  # pragma: no cover - defensive
-                        pass
-                else:
-                    self._index.add(message_id)
-                self._entries.append(message_id)
+        now = datetime.now(timezone.utc)
+        for message_id in normalized_ids:
+            # Upsert: update seen_at if exists, insert if new
+            self._collection.update_one(
+                {"message_id": message_id},
+                {"$set": {"message_id": message_id, "seen_at": now}},
+                upsert=True,
+            )
 
-            self._prune_locked()
-            self._persist_locked()
+        self._prune()
 
     def snapshot(self) -> List[str]:
-        with self._lock:
-            return list(self._entries)
+        """Return all message IDs in order of recency (oldest first)."""
+        cursor = self._collection.find({}).sort([("seen_at", 1)])
+        return [doc["message_id"] for doc in cursor]
 
     def clear(self) -> None:
-        with self._lock:
-            self._entries.clear()
-            self._index.clear()
-            self._persist_locked()
+        self._collection.delete_many({})
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -74,46 +79,18 @@ class GmailSeenStore:
             return ""
         return str(message_id).strip()
 
-    def _load(self) -> None:
-        try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "Failed to load Gmail seen-store; starting empty",
-                extra={"path": str(self._path), "error": str(exc)},
-            )
+    def _prune(self) -> None:
+        """Remove oldest entries if we exceed max_entries."""
+        count = self._collection.count_documents({})
+        if count <= self._max_entries:
             return
 
-        if not isinstance(data, list):
-            logger.warning(
-                "Gmail seen-store payload invalid; expected list",
-                extra={"path": str(self._path)},
-            )
-            return
-
-        for raw_id in data[-self._max_entries :]:
-            normalized = self._normalize(raw_id)
-            if normalized and normalized not in self._index:
-                self._entries.append(normalized)
-                self._index.add(normalized)
-
-    def _prune_locked(self) -> None:
-        while len(self._entries) > self._max_entries:
-            oldest = self._entries.popleft()
-            self._index.discard(oldest)
-
-    def _persist_locked(self) -> None:
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            payload = list(self._entries)
-            self._path.write_text(json.dumps(payload), encoding="utf-8")
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "Failed to persist Gmail seen-store",
-                extra={"path": str(self._path), "error": str(exc)},
-            )
+        # Find the oldest entries to remove
+        excess = count - self._max_entries
+        oldest_docs = self._collection.find({}).sort([("seen_at", 1)]).limit(excess)
+        oldest_ids = [doc["_id"] for doc in oldest_docs]
+        if oldest_ids:
+            self._collection.delete_many({"_id": {"$in": oldest_ids}})
 
 
 __all__ = ["GmailSeenStore"]

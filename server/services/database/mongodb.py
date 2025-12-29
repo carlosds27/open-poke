@@ -54,3 +54,8 @@ class MongoDB:
             }
             for row in cursor
         ]
+
+
+if __name__ == "__main__":
+    mongodb = MongoDB.get_instance()
+    print(mongodb.get_collection_list())

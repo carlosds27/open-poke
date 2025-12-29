@@ -1,20 +1,14 @@
 from __future__ import annotations
 
 import json
-import re
-import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape, unescape
-from pathlib import Path
 from typing import List, Optional, Tuple
 
+from ...database.mongodb import MongoDB
 from ....logging_config import logger
 from ....utils.timezones import now_in_user_timezone
 from .state import LogEntry, SummaryState
-
-
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
-_WORKING_MEMORY_LOG_PATH = _DATA_DIR / "conversation" / "poke_working_memory.log"
 
 
 def _encode_payload(payload: str) -> str:
@@ -30,7 +24,7 @@ def _decode_payload(payload: str) -> str:
 def _format_line(tag: str, payload: str, timestamp: Optional[str] = None) -> str:
     encoded = _encode_payload(payload)
     if timestamp:
-        return f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
+        return f'<{tag} timestamp="{timestamp}">{encoded}</{tag}>\n'
     return f"<{tag}>{encoded}</{tag}>\n"
 
 
@@ -39,144 +33,168 @@ def _current_timestamp() -> str:
 
 
 class WorkingMemoryLog:
-    """Persisted working-memory file storing conversation summary and recent entries."""
+    """Persisted working-memory MongoDB collection storing conversation summary and recent entries."""
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._lock = threading.Lock()
-        self._ensure_directory()
-        self._initialize_file()
+    def __init__(self) -> None:
+        self._mongodb = MongoDB.get_instance()
+        self._collection = self._mongodb.get_collection_by_name("working_memory_log")
+        self._ensure_indexes()
+        self._initialize_collection()
 
-    def _ensure_directory(self) -> None:
+    def _ensure_indexes(self) -> None:
+        """Create indexes for efficient queries."""
         try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
+            # Index for entry type and sequence ordering
+            self._collection.create_index([("_type", 1), ("sequence", 1)])
+            # Index for summary state lookup
+            self._collection.create_index([("_type", 1)])
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(
-                "working memory directory creation failed",
-                extra={"error": str(exc), "path": str(self._path)},
+                "working memory index creation failed",
+                extra={"error": str(exc)},
             )
 
-    def _initialize_file(self) -> None:
-        with self._lock:
-            self._initialize_file_locked()
-
-    def _initialize_file_locked(self) -> None:
-        if self._path.exists() and self._path.stat().st_size > 0:
+    def _initialize_collection(self) -> None:
+        """Initialize collection with empty summary state if needed."""
+        existing = self._collection.find_one({"_type": "summary_state"})
+        if existing is not None:
             return
         initial_state = SummaryState.empty()
-        lines = [
-            _format_line(
-                "summary_info",
-                json.dumps({"last_index": initial_state.last_index, "updated_at": None}),
-            ),
-            _format_line("conversation_summary", ""),
-        ]
+        summary_doc = {
+            "_type": "summary_state",
+            "summary_text": "",
+            "last_index": initial_state.last_index,
+            "updated_at": None,
+        }
         try:
-            self._path.write_text("".join(lines), encoding="utf-8")
+            self._collection.insert_one(summary_doc)
         except Exception as exc:  # pragma: no cover - defensive
             logger.error(
                 "working memory initialization failed",
-                extra={"error": str(exc), "path": str(self._path)},
+                extra={"error": str(exc)},
             )
             raise
 
-    def append_entry(self, tag: str, payload: str, timestamp: Optional[str] = None) -> None:
+    def _get_next_sequence(self) -> int:
+        """Get the next sequence number for entries."""
+        max_doc = self._collection.find_one({"_type": "entry"}, sort=[("sequence", -1)])
+        return 1 if max_doc is None else max_doc.get("sequence", 0) + 1
+
+    def append_entry(
+        self, tag: str, payload: str, timestamp: Optional[str] = None
+    ) -> None:
         sanitized_timestamp = timestamp or _current_timestamp()
-        line = _format_line(tag, str(payload), sanitized_timestamp)
-        with self._lock:
-            try:
-                with self._path.open("a", encoding="utf-8") as handle:
-                    handle.write(line)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.error(
-                    "working memory append failed",
-                    extra={"error": str(exc), "tag": tag, "path": str(self._path)},
-                )
-                raise
+        sequence = self._get_next_sequence()
+        encoded_payload = _encode_payload(str(payload))
+
+        entry_doc = {
+            "_type": "entry",
+            "tag": tag,
+            "payload": encoded_payload,
+            "timestamp": sanitized_timestamp,
+            "sequence": sequence,
+            "created_at": datetime.now(timezone.utc),
+        }
+
+        try:
+            self._collection.insert_one(entry_doc)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "working memory append failed",
+                extra={"error": str(exc), "tag": tag},
+            )
+            raise
 
     def load_summary_state(self) -> SummaryState:
-        with self._lock:
-            try:
-                lines = self._path.read_text(encoding="utf-8").splitlines()
-            except FileNotFoundError:
-                return SummaryState.empty()
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.error(
-                    "working memory read failed",
-                    extra={"error": str(exc), "path": str(self._path)},
-                )
+        try:
+            # Load summary state document
+            summary_doc = self._collection.find_one({"_type": "summary_state"})
+            if summary_doc is None:
                 return SummaryState.empty()
 
-        summary_text = ""
-        last_index = -1
-        updated_at: Optional[datetime] = None
-        entries: List[LogEntry] = []
-
-        for raw_line in lines:
-            parsed = self._parse_line(raw_line)
-            if parsed is None:
-                continue
-            tag, timestamp, payload = parsed
-            if tag == "summary_info":
+            summary_text = summary_doc.get("summary_text", "")
+            last_index = summary_doc.get("last_index", -1)
+            updated_at_raw = summary_doc.get("updated_at")
+            updated_at: Optional[datetime] = None
+            if isinstance(updated_at_raw, str) and updated_at_raw:
                 try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError:
-                    continue
-                last_index_val = data.get("last_index")
-                if isinstance(last_index_val, int):
-                    last_index = last_index_val
-                updated_raw = data.get("updated_at")
-                if isinstance(updated_raw, str) and updated_raw:
-                    try:
-                        updated_at = datetime.fromisoformat(updated_raw)
-                    except ValueError:
-                        updated_at = None
-            elif tag == "conversation_summary":
-                summary_text = payload
-            else:
+                    updated_at = datetime.fromisoformat(updated_at_raw)
+                except ValueError:
+                    updated_at = None
+            elif isinstance(updated_at_raw, datetime):
+                updated_at = updated_at_raw
+
+            # Load all entries
+            entries: List[LogEntry] = []
+            entry_cursor = self._collection.find({"_type": "entry"}).sort(
+                [("sequence", 1)]
+            )
+            for entry_doc in entry_cursor:
+                decoded_payload = _decode_payload(entry_doc.get("payload", ""))
                 entries.append(
-                    LogEntry(tag=tag, payload=payload, timestamp=timestamp or None)
+                    LogEntry(
+                        tag=entry_doc.get("tag", ""),
+                        payload=decoded_payload,
+                        timestamp=entry_doc.get("timestamp"),
+                    )
                 )
 
-        state = SummaryState(
-            summary_text=summary_text,
-            last_index=last_index,
-            updated_at=updated_at,
-            unsummarized_entries=entries,
-        )
-        return state
+            state = SummaryState(
+                summary_text=summary_text,
+                last_index=last_index,
+                updated_at=updated_at,
+                unsummarized_entries=entries,
+            )
+            return state
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "working memory read failed",
+                extra={"error": str(exc)},
+            )
+            return SummaryState.empty()
 
     def write_summary_state(self, state: SummaryState) -> None:
-        meta_payload = json.dumps(
-            {
+        try:
+            # Update or insert summary state document
+            summary_doc = {
+                "_type": "summary_state",
+                "summary_text": state.summary_text or "",
                 "last_index": state.last_index,
-                "updated_at": state.updated_at.isoformat() if state.updated_at else None,
+                "updated_at": (
+                    state.updated_at.isoformat() if state.updated_at else None
+                ),
             }
-        )
+            self._collection.update_one(
+                {"_type": "summary_state"},
+                {"$set": summary_doc},
+                upsert=True,
+            )
 
-        lines = [_format_line("summary_info", meta_payload)]
-        lines.append(_format_line("conversation_summary", state.summary_text or ""))
-        for entry in state.unsummarized_entries:
-            lines.append(_format_line(entry.tag, entry.payload, entry.timestamp))
+            # Delete all existing entries
+            self._collection.delete_many({"_type": "entry"})
 
-        temp_path = self._path.with_suffix(".tmp")
-        data = "".join(lines)
-        with self._lock:
-            try:
-                temp_path.write_text(data, encoding="utf-8")
-                temp_path.replace(self._path)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.error(
-                    "working memory write failed",
-                    extra={"error": str(exc), "path": str(self._path)},
-                )
-                raise
-            finally:
-                if temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except Exception:  # pragma: no cover - defensive cleanup
-                        pass
+            # Insert new entries
+            if state.unsummarized_entries:
+                entry_docs = []
+                for idx, entry in enumerate(state.unsummarized_entries, start=1):
+                    encoded_payload = _encode_payload(entry.payload)
+                    entry_doc = {
+                        "_type": "entry",
+                        "tag": entry.tag,
+                        "payload": encoded_payload,
+                        "timestamp": entry.timestamp,
+                        "sequence": idx,
+                        "created_at": datetime.now(timezone.utc),
+                    }
+                    entry_docs.append(entry_doc)
+                if entry_docs:
+                    self._collection.insert_many(entry_docs)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "working memory write failed",
+                extra={"error": str(exc)},
+            )
+            raise
 
     def render_transcript(self, state: Optional[SummaryState] = None) -> str:
         snapshot = state or self.load_summary_state()
@@ -194,62 +212,30 @@ class WorkingMemoryLog:
                     f'<{entry.tag} timestamp="{entry.timestamp}">{safe_payload}</{entry.tag}>'
                 )
             else:
-                parts.append(f'<{entry.tag}>{safe_payload}</{entry.tag}>')
+                parts.append(f"<{entry.tag}>{safe_payload}</{entry.tag}>")
 
-        return '\n'.join(parts)
+        return "\n".join(parts)
 
     def clear(self) -> None:
-        with self._lock:
-            try:
-                if self._path.exists():
-                    self._path.unlink()
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning(
-                    "working memory clear failed",
-                    extra={"error": str(exc), "path": str(self._path)},
-                )
-            finally:
-                self._ensure_directory()
-                self._initialize_file_locked()
-
-    def _parse_line(self, line: str) -> Optional[Tuple[str, Optional[str], str]]:
-        stripped = line.strip()
-        if not stripped.startswith("<") or "</" not in stripped:
-            return None
-        open_end = stripped.find(">")
-        if open_end == -1:
-            return None
-        open_tag_content = stripped[1:open_end]
-        if " " in open_tag_content:
-            tag, attr_string = open_tag_content.split(" ", 1)
-        else:
-            tag, attr_string = open_tag_content, ""
-        close_start = stripped.rfind("</")
-        close_end = stripped.rfind(">")
-        if close_start == -1 or close_end == -1:
-            return None
-        closing_tag = stripped[close_start + 2 : close_end]
-        if closing_tag != tag:
-            return None
-        payload = stripped[open_end + 1 : close_start]
-        timestamp = None
-        if attr_string:
-            match = re.search(r'timestamp="([^"]*)"', attr_string)
-            if match:
-                timestamp = match.group(1)
-        return tag, timestamp, _decode_payload(payload)
+        try:
+            # Delete all documents
+            self._collection.delete_many({})
+            # Reinitialize with empty state
+            self._initialize_collection()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "working memory clear failed",
+                extra={"error": str(exc)},
+            )
 
 
 _working_memory_log: Optional[WorkingMemoryLog] = None
-_factory_lock = threading.Lock()
 
 
 def get_working_memory_log() -> WorkingMemoryLog:
     global _working_memory_log
     if _working_memory_log is None:
-        with _factory_lock:
-            if _working_memory_log is None:
-                _working_memory_log = WorkingMemoryLog(_WORKING_MEMORY_LOG_PATH)
+        _working_memory_log = WorkingMemoryLog()
     return _working_memory_log
 
 

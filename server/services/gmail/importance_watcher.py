@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
 from .client import execute_gmail_tool, get_active_gmail_user_id
@@ -31,10 +30,6 @@ DEFAULT_MAX_RESULTS = 20
 DEFAULT_SEEN_LIMIT = 300
 
 
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_DEFAULT_SEEN_PATH = _DATA_DIR / "gmail_seen.json"
-
-
 class ImportantEmailWatcher:
     """Poll Gmail for recent messages and surface important ones."""
 
@@ -50,9 +45,7 @@ class ImportantEmailWatcher:
         self._lock = asyncio.Lock()
         self._task: Optional[asyncio.Task[None]] = None
         self._running = False
-        self._seen_store = seen_store or GmailSeenStore(
-            _DEFAULT_SEEN_PATH, DEFAULT_SEEN_LIMIT
-        )
+        self._seen_store = seen_store or GmailSeenStore(DEFAULT_SEEN_LIMIT)
         self._cleaner = EmailTextCleaner(max_url_length=60)
         self._has_seeded_initial_snapshot = False
         self._last_poll_timestamp: Optional[datetime] = None
