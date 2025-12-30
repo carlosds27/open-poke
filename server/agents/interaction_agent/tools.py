@@ -34,6 +34,10 @@ TOOL_SCHEMAS = [
                         "type": "string",
                         "description": "Human-readable agent name describing its purpose (e.g., 'Vercel Job Offer', 'Email to Sharanjeet'). This name will be used to identify and potentially reuse the agent."
                     },
+                    "agent_description": {
+                        "type": "string",
+                        "description": "Description of the agent's purpose (e.g., 'Help user with Vercel job offer', 'Email conversation with Sharanjeet'). This description will be used to route the request to the correct agent."
+                    },
                     "instructions": {"type": "string", "description": "Instructions for the agent to execute."},
                 },
                 "required": ["agent_name", "instructions"],
@@ -109,17 +113,27 @@ _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
 
 
 # Create or reuse execution agent and dispatch instructions asynchronously
-def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
+async def send_message_to_agent(agent_name: str, agent_description: str, instructions: str) -> ToolResult:
     """Send instructions to an execution agent."""
     roster = get_agent_roster()
     roster.load()
-    existing_agents = set(roster.get_agents())
-    is_new = agent_name not in existing_agents
+    # Find similar agents first using name exact match
+    existing_agents = set(roster.get_agent_names())
+    agent_name_not_exists = agent_name not in existing_agents
+    is_new = False
 
-    if is_new:
-        roster.add_agent(agent_name)
+    if agent_name_not_exists:
+        logger.info(f"Agent name not exists, searching for similar agents: {agent_description}")
+        similar_agents = await roster.search_agents_by_description(agent_description, limit=5, min_score=0.5)
+        if similar_agents:
+            logger.info(f"Similar agents found: {similar_agents}")
+            agent_name = similar_agents[0].name
+            agent_description = similar_agents[0].description
+        else:
+            is_new = True
+            await roster.add_agent(agent_name, agent_description)
 
-    get_execution_agent_logs().record_request(agent_name, instructions)
+    get_execution_agent_logs().record_request(agent_name, agent_description, instructions)
 
     action = "Created" if is_new else "Reused"
     logger.info(f"{action} agent: {agent_name}")
@@ -215,7 +229,7 @@ def get_tool_schemas():
 
 
 # Route tool calls to appropriate handlers with argument validation and error handling
-def handle_tool_call(name: str, arguments: Any) -> ToolResult:
+async def handle_tool_call(name: str, arguments: Any) -> ToolResult:
     """Handle tool calls from interaction agent."""
     try:
         if isinstance(arguments, str):
@@ -226,7 +240,7 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return ToolResult(success=False, payload={"error": "Invalid arguments format"})
 
         if name == "send_message_to_agent":
-            return send_message_to_agent(**args)
+            return await send_message_to_agent(**args)
         if name == "send_message_to_user":
             return send_message_to_user(**args)
         if name == "send_draft":

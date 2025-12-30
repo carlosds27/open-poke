@@ -51,7 +51,7 @@ class ExecutionAgentLogStore:
         )
         return 1 if max_doc is None else max_doc.get("sequence", 0) + 1
 
-    def _append(self, agent_name: str, tag: str, payload: str) -> None:
+    def _append(self, agent_name: str, agent_description: str, tag: str, payload: str) -> None:
         """Append an entry with the given tag."""
         timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
         sequence = self._get_next_sequence(agent_name)
@@ -59,6 +59,7 @@ class ExecutionAgentLogStore:
 
         document = {
             "agent_name": agent_name,
+            "agent_description": agent_description,
             "tag": tag,
             "timestamp": timestamp,
             "payload": encoded_payload,
@@ -74,23 +75,23 @@ class ExecutionAgentLogStore:
                 extra={"agent_name": agent_name, "error": str(exc)},
             )
 
-    def record_request(self, agent_name: str, instructions: str) -> None:
+    def record_request(self, agent_name: str, agent_description: str, instructions: str) -> None:
         """Record an incoming request from the interaction agent."""
-        self._append(agent_name, "agent_request", instructions)
+        self._append(agent_name, agent_description, "agent_request", instructions)
 
     def record_action(self, agent_name: str, description: str) -> None:
         """Record an agent action (tool call)."""
-        self._append(agent_name, "agent_action", description)
+        self._append(agent_name, "", "agent_action", description)
 
     def record_tool_response(
         self, agent_name: str, tool_name: str, response: str
     ) -> None:
         """Record the response from a tool."""
-        self._append(agent_name, "tool_response", f"{tool_name}: {response}")
+        self._append(agent_name, "", "tool_response", f"{tool_name}: {response}")
 
     def record_agent_response(self, agent_name: str, response: str) -> None:
         """Record the agent's final response."""
-        self._append(agent_name, "agent_response", response)
+        self._append(agent_name, "", "agent_response", response)
 
     def iter_entries(self, agent_name: str) -> Iterator[Tuple[str, str, str]]:
         """Iterate over all log entries for an agent."""
