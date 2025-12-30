@@ -1,6 +1,5 @@
 """Agent roster management with vector search support - each agent stored as a separate document."""
-import asyncio
-
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from ..database.mongodb import MongoDB
 from ...logging_config import logger
@@ -73,7 +72,8 @@ class AgentRoster:
                 self._collection.insert_one({
                     "name": agent_name,
                     "description": agent_description,
-                    "embedding": embedding
+                    "embedding": embedding,
+                    "last_used_at": datetime.now(timezone.utc),
                 })
                 # Only add to in-memory list if save was successful
                 self._agents.append(agent)
@@ -95,11 +95,27 @@ class AgentRoster:
         """Get list of all agent names."""
         return [agent.name for agent in self._agents]
 
+    def get_top_agent_names(self, limit: int = 3) -> list[str]:
+        """Get list of top agent names by last used at from MongoDB."""
+        try:
+            pipeline = [
+                {
+                    "$sort": {"last_used_at": -1}
+                },
+                {
+                    "$limit": limit
+                }
+            ]
+            results = self._collection.aggregate(pipeline)
+            return [result["name"] for result in results]
+        except Exception as exc:
+            return self.get_agent_names()
+
     async def search_agents_by_description(
         self, 
         query_description: str, 
         limit: int = 5,
-        min_score: float = 0.0
+        min_score: float = 0.5
     ) -> list[AgentObject]:
         """Search for agents using vector search on their descriptions.
         
@@ -131,23 +147,19 @@ class AgentRoster:
                     "$addFields": {
                         "score": {"$meta": "vectorSearchScore"}
                     }
-                },
-                {
-                    "$match": {
-                        "score": {"$gte": min_score}
-                    }
                 }
             ]
             
             results = []
             for doc in self._collection.aggregate(pipeline):
                 logger.info(f"Found agent in vector search: {doc['name']} - {doc['description']} - {doc['score']}")
-                results.append(
-                    AgentObject(
-                        name=doc["name"],
-                        description=doc["description"],
+                if doc['score'] >= min_score:
+                    results.append(
+                        AgentObject(
+                            name=doc["name"],
+                            description=doc["description"],
+                        )
                     )
-                )
             
             return results
         except Exception as exc:
@@ -159,6 +171,19 @@ class AgentRoster:
                 agent for agent in self._agents
                 if query_description.lower() in agent.description.lower()
             ][:limit]
+
+    async def log_use_agent(self, agent_name: str) -> None:
+        """Log the use of an agent."""
+        try:
+            self._collection.update_one(
+                {"name": agent_name},
+                {"$set": {"last_used_at": datetime.now(timezone.utc)}},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to log use of agent",
+                extra={"error": str(exc), "agent_name": agent_name},
+            )
 
     def clear(self) -> None:
         """Clear the agent roster."""

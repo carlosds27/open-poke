@@ -26,7 +26,6 @@ def prepare_message_with_history(
     sections: List[str] = []
 
     sections.append(_render_conversation_history(transcript))
-    # TODO: Reduce the number of active agents to 3 the most recent ones used, then have an "other" to find using vector similarity search.
     sections.append(f"<active_agents>\n{_render_active_agents()}\n</active_agents>")
     sections.append(_render_current_turn(latest_text, message_type))
 
@@ -46,7 +45,8 @@ def _render_conversation_history(transcript: str) -> str:
 def _render_active_agents() -> str:
     roster = get_agent_roster()
     roster.load()
-    agents = roster.get_agent_names()
+    agents = roster.get_top_agent_names()
+    print(f"Active agents: {agents}")
 
     if not agents:
         return "None"

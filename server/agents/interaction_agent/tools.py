@@ -124,7 +124,7 @@ async def send_message_to_agent(agent_name: str, agent_description: str, instruc
 
     if agent_name_not_exists:
         logger.info(f"Agent name not exists, searching for similar agents: {agent_description}")
-        similar_agents = await roster.search_agents_by_description(agent_description, limit=5, min_score=0.5)
+        similar_agents = await roster.search_agents_by_description(agent_description, limit=5, min_score=0.7)
         if similar_agents:
             logger.info(f"Similar agents found: {similar_agents}")
             agent_name = similar_agents[0].name
@@ -140,6 +140,7 @@ async def send_message_to_agent(agent_name: str, agent_description: str, instruc
 
     async def _execute_async() -> None:
         try:
+            await roster.log_use_agent(agent_name)
             result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent_name, instructions)
             status = "SUCCESS" if result.success else "FAILED"
             logger.info(f"Agent '{agent_name}' completed: {status}")
