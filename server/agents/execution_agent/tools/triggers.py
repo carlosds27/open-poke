@@ -127,6 +127,7 @@ def _create_trigger_tool(
     status: Optional[str] = None,
 ) -> Dict[str, Any]:
     timezone_value = get_timezone_store().get_timezone()
+    start_time = start_time.replace("Z", "") if start_time else None# LLM will always return a timestamp with a Z suffix
     summary_args = {
         "recurrence_rule": recurrence_rule,
         "start_time": start_time,
@@ -180,6 +181,7 @@ def _update_trigger_tool(
 
     try:
         timezone_value = get_timezone_store().get_timezone()
+        start_time = start_time.replace("Z", "") if start_time else None # LLM will always return a timestamp with a Z suffix
         record = _TRIGGER_SERVICE.update_trigger(
             trigger_id_int,
             agent_name=agent_name,
