@@ -65,6 +65,7 @@ class Settings(BaseModel):
     composio_api_key: Optional[str] = Field(default=os.getenv("COMPOSIO_API_KEY"))
     mongodb_user: Optional[str] = Field(default=os.getenv("MONGODB_USER"))
     mongodb_pass: Optional[str] = Field(default=os.getenv("MONGODB_PASS"))
+    jwt_secret: Optional[str] = Field(default=os.getenv("JWT_SECRET"))
 
     # HTTP behaviour
     cors_allow_origins_raw: str = Field(
