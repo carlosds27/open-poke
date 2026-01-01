@@ -12,10 +12,7 @@ _LOG_STORE = get_execution_agent_logs()
 mcp = OpenPokeMCP(
     name="trigger_mcp", 
     version="1.0.0", 
-    tags=["triggers"], 
     instructions="This server provides all the necessary tools related to triggers.",
-    message_path="/triggers/messages/",
-    streamable_http_path="/triggers/mcp/",
     debug=False,
     log_level="INFO",
 )
@@ -137,6 +134,7 @@ async def list_triggers(
 ) -> dict:
     """List all triggers belonging to this execution agent."""
     try:
+        print(f"Listing triggers for agent {agent_name}")
         record = _TRIGGER_SERVICE.list_triggers(
             agent_name=agent_name,
         )
@@ -153,4 +151,6 @@ async def list_triggers(
     return {"triggers": [await _trigger_record_to_payload(record) for record in record]}
 
 if __name__ == "__main__":
-    mcp.run()
+    import uvicorn
+    mcp_server = mcp.http_app(path="/triggers/mcp")
+    uvicorn.run(mcp_server, host="0.0.0.0", port=9141)

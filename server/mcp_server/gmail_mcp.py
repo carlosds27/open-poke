@@ -3,6 +3,7 @@ from fastmcp import FastMCP
 import json
 from server.services.execution import get_execution_agent_logs
 from server.services.gmail import execute_gmail_tool, get_active_gmail_user_id
+from server.agents.execution_agent.tasks.search_email.tool import task_email_search
 
 _GMAIL_AGENT_NAME = "gmail-execution-agent"
 _LOG_STORE = get_execution_agent_logs()
@@ -10,12 +11,7 @@ _LOG_STORE = get_execution_agent_logs()
 mcp = FastMCP(
     name="gmail_mcp",
     version="1.0.0",
-    tags=["gmail"],
     instructions="This server provides all the necessary tools related to Gmail operations.",
-    message_path="/gmail/messages/",
-    streamable_http_path="/gmail/mcp/",
-    debug=False,
-    log_level="INFO",
 )
 
 async def _execute_gmail_tool(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -235,12 +231,14 @@ async def gmail_search_people(
 
 
 @mcp.tool(name="task_email_search")
-async def task_email_search(
+async def task_email_search_mcp(
     search_query: Annotated[str, "Raw search request describing the emails to find."],
 ) -> dict:
     """Expand a raw Gmail search request into multiple targeted queries and return relevant emails."""
-    # TODO: IMPLEMENT THIS
-    pass
+    return await task_email_search(search_query)
 
 if __name__ == "__main__":
-    mcp.run()
+    import uvicorn
+
+    mcp_server = mcp.http_app(path="/gmail/mcp")
+    uvicorn.run(mcp_server, host="0.0.0.0", port=9142)

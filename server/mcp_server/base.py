@@ -21,7 +21,7 @@ class OpenPokeMCP(FastMCP):
         agent_name = MCP_AUTHENTICATOR.verify_token(openpoke_mcp_auth_token)
         if not agent_name:
             raise HTTPException(status_code=401, detail="Unauthorized")
-        return await super().get_tools(agent_name)
+        return await super().get_tools()
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
