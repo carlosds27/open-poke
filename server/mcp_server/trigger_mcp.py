@@ -2,11 +2,11 @@ from typing import Annotated, Optional, Dict, Any
 import json
 from server.mcp_server.base import OpenPokeMCP
 from server.services.triggers import get_trigger_service, TriggerRecord
-from server.services.timezone_store import get_timezone_store
 from server.services.execution import get_execution_agent_logs
+from server.utils.timezones import format_datetime_for_mcp, parse_datetime_from_mcp
+from datetime import datetime
 
 _TRIGGER_SERVICE = get_trigger_service()
-_TIMEZONE_STORE = get_timezone_store()
 _LOG_STORE = get_execution_agent_logs()
 
 mcp = OpenPokeMCP(
@@ -22,14 +22,14 @@ async def _trigger_record_to_payload(record: TriggerRecord) -> Dict[str, Any]:
     return {
         "id": record.id,
         "payload": record.payload,
-        "start_time": record.start_time,
-        "next_trigger": record.next_trigger,
+        "start_time": format_datetime_for_mcp(record.start_time) if isinstance(record.start_time, datetime) else record.start_time,
+        "next_trigger": format_datetime_for_mcp(record.next_trigger) if isinstance(record.next_trigger, datetime) else record.next_trigger,
         "recurrence_rule": record.recurrence_rule,
         "timezone": record.timezone,
         "status": record.status,
         "last_error": record.last_error,
-        "created_at": record.created_at,
-        "updated_at": record.updated_at,
+        "created_at": format_datetime_for_mcp(record.created_at) if isinstance(record.created_at, datetime) else str(record.created_at),
+        "updated_at": format_datetime_for_mcp(record.updated_at) if isinstance(record.updated_at, datetime) else str(record.updated_at),
     }
 
 @mcp.tool(name="createTrigger")
@@ -37,25 +37,22 @@ async def create_trigger(
     agent_name: Annotated[Optional[str], "Leave this blank."],
     payload: Annotated[str, "Raw instruction text that should run when the trigger fires."], 
     recurrence_rule: Annotated[Optional[str], "iCalendar RRULE string describing how often to fire (optional)."], 
-    start_time: Annotated[Optional[str], "ISO 8601 start time for the first firing. Defaults to now if omitted."], 
+    start_time: Annotated[Optional[str], "Start time in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone). Defaults to now if omitted."], 
     status: Annotated[Optional[str], "Initial status; usually 'active' or 'paused'."],
 ) -> dict:
     """Create a reminder trigger for the current execution agent."""
-    timezone_value = get_timezone_store().get_timezone()
-    start_time = start_time.replace("Z", "") if start_time else None # LLM will always return a timestamp with a Z suffix
     summary_args = {
         "recurrence_rule": recurrence_rule,
         "start_time": start_time,
-        "timezone": timezone_value,
         "status": status,
     }
     try:
+        start_time_dt = parse_datetime_from_mcp(start_time) if start_time else None
         record = _TRIGGER_SERVICE.create_trigger(
             agent_name=agent_name,
             payload=payload,
             recurrence_rule=recurrence_rule,
-            start_time=start_time,
-            timezone_name=timezone_value,
+            start_time=start_time_dt,
             status=status,
         )
     except Exception as exc:
@@ -68,14 +65,7 @@ async def create_trigger(
         agent_name,
         description=f"createTrigger succeeded | trigger_id={record.id}",
     )
-    return {
-        "trigger_id": record.id,
-        "status": record.status,
-        "next_trigger": record.next_trigger,
-        "start_time": record.start_time,
-        "timezone": record.timezone,
-        "recurrence_rule": record.recurrence_rule,
-    }
+    return await _trigger_record_to_payload(record)
 
 @mcp.tool(name="updateTrigger")
 async def update_trigger(
@@ -83,7 +73,7 @@ async def update_trigger(
     trigger_id: Annotated[int, "Identifier returned when the trigger was created."],
     payload: Annotated[Optional[str], "Replace the instruction payload (optional)."],
     recurrence_rule: Annotated[Optional[str], "New RRULE definition (optional)."],
-    start_time: Annotated[Optional[str], "New ISO 8601 start time for the schedule (optional)."],
+    start_time: Annotated[Optional[str], "New start time in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone, optional)."],
     status: Annotated[Optional[str], "Set trigger status to 'active', 'paused', or 'completed'."],
 ) -> dict:
     """Update or pause an existing trigger owned by this execution agent."""
@@ -92,15 +82,13 @@ async def update_trigger(
     except (TypeError, ValueError):
         return {"error": "trigger_id must be an integer"}
     try:
-        timezone_value = get_timezone_store().get_timezone()
-        start_time = start_time.replace("Z", "") if start_time else None # LLM will always return a timestamp with a Z suffix
+        start_time_dt = parse_datetime_from_mcp(start_time) if start_time else None
         record = _TRIGGER_SERVICE.update_trigger(
             trigger_id_int,
             agent_name=agent_name,
             payload=payload,
             recurrence_rule=recurrence_rule,
-            start_time=start_time,
-            timezone_name=timezone_value,
+            start_time=start_time_dt,
             status=status,
         )
     except Exception as exc:
@@ -118,15 +106,7 @@ async def update_trigger(
         description=f"updateTrigger succeeded | trigger_id={trigger_id_int}",
     )
 
-    return {
-        "trigger_id": record.id,
-        "status": record.status,
-        "next_trigger": record.next_trigger,
-        "start_time": record.start_time,
-        "timezone": record.timezone,
-        "recurrence_rule": record.recurrence_rule,
-        "last_error": record.last_error,
-    }
+    return await _trigger_record_to_payload(record)
 
 @mcp.tool(name="listTriggers")
 async def list_triggers(

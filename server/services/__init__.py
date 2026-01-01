@@ -28,6 +28,11 @@ from .gmail import (
 from .trigger_scheduler import get_trigger_scheduler
 from .triggers import get_trigger_service
 from .timezone_store import TimezoneStore, get_timezone_store
+from .bookkeeping import (
+    BookkeepingRecord,
+    BookkeepingService,
+    get_bookkeeping_service,
+)
 from .database import MongoDB
 
 __all__ = [
@@ -54,5 +59,8 @@ __all__ = [
     "get_trigger_service",
     "TimezoneStore",
     "get_timezone_store",
+    "BookkeepingRecord",
+    "BookkeepingService",
+    "get_bookkeeping_service",
     "MongoDB",
 ]

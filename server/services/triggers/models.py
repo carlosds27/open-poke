@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -13,14 +14,14 @@ class TriggerRecord(BaseModel):
     id: int
     agent_name: str
     payload: str
-    start_time: Optional[str] = None
-    next_trigger: Optional[str] = None
+    start_time: Optional[datetime] = None
+    next_trigger: Optional[datetime] = None
     recurrence_rule: Optional[str] = None
     timezone: Optional[str] = None
     status: str
     last_error: Optional[str] = None
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 __all__ = ["TriggerRecord"]

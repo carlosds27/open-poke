@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from zoneinfo import ZoneInfo
 
 from ...logging_config import logger
+from ...utils.timezones import convert_to_user_timezone, now_in_user_timezone, resolve_user_timezone
 from .models import TriggerRecord
 from .store import TriggerStore
 from .utils import (
     build_recurrence,
-    coerce_start_datetime,
     load_rrule,
     normalize_status,
-    parse_iso,
-    resolve_timezone,
-    to_storage_timestamp,
-    utc_now,
 )
 
 
@@ -35,13 +31,17 @@ class TriggerService:
         agent_name: str,
         payload: str,
         recurrence_rule: Optional[str] = None,
-        start_time: Optional[str] = None,
-        timezone_name: Optional[str] = None,
+        start_time: Optional[datetime] = None,
         status: Optional[str] = None,
     ) -> TriggerRecord:
-        tz = resolve_timezone(timezone_name)
-        now = utc_now()
-        start_dt_local = coerce_start_datetime(start_time, tz, now)
+        """Create a trigger.
+        
+        The start_time parameter is interpreted in the user's timezone (or timezone_name if provided).
+        """
+        tz = resolve_user_timezone()
+        
+        now = now_in_user_timezone()
+        start_dt_local = start_time if start_time else now
         stored_recurrence = build_recurrence(recurrence_rule, start_dt_local, tz)
         next_fire = self._compute_next_fire(
             stored_recurrence=stored_recurrence,
@@ -49,18 +49,17 @@ class TriggerService:
             tz=tz,
             now=now,
         )
-        timestamp = to_storage_timestamp(now)
         record: Dict[str, Any] = {
             "agent_name": agent_name,
             "payload": payload,
-            "start_time": to_storage_timestamp(start_dt_local),
-            "next_trigger": to_storage_timestamp(next_fire) if next_fire else None,
+            "start_time": start_dt_local,
+            "next_trigger": next_fire,
             "recurrence_rule": stored_recurrence,
             "timezone": getattr(tz, "key", "UTC"),
             "status": normalize_status(status),
             "last_error": None,
-            "created_at": timestamp,
-            "updated_at": timestamp,
+            "created_at": now,
+            "updated_at": now,
         }
         trigger_id = self._store.insert(record)
         created = self._store.fetch_one(trigger_id, agent_name)
@@ -75,23 +74,28 @@ class TriggerService:
         agent_name: str,
         payload: Optional[str] = None,
         recurrence_rule: Optional[str] = None,
-        start_time: Optional[str] = None,
-        timezone_name: Optional[str] = None,
+        start_time: Optional[datetime] = None,
         status: Optional[str] = None,
         last_error: Optional[str] = None,
         clear_error: bool = False,
     ) -> Optional[TriggerRecord]:
+        """Update a trigger.
+        
+        The start_time parameter is interpreted in the user's timezone (or timezone_name if provided).
+        """
         existing = self._store.fetch_one(trigger_id, agent_name)
         if existing is None:
             return None
 
-        tz = resolve_timezone(timezone_name or existing.timezone)
+        tz = resolve_user_timezone()
+        # existing.start_time is now a datetime in user timezone
         start_reference = (
-            parse_iso(existing.start_time)
+            existing.start_time
             if existing.start_time
-            else utc_now()
+            else now_in_user_timezone()
         )
-        start_dt_local = coerce_start_datetime(start_time, tz, start_reference)
+        
+        start_dt_local = start_time if start_time else start_reference
 
         fields: Dict[str, Any] = {}
         if payload is not None:
@@ -109,12 +113,12 @@ class TriggerService:
             normalized_status = existing.status
 
         if start_time is not None:
-            fields["start_time"] = to_storage_timestamp(start_dt_local.astimezone(tz))
-        if timezone_name is not None:
+            fields["start_time"] = start_dt_local
+        if getattr(tz, "key", "UTC") != existing.timezone:
             fields["timezone"] = getattr(tz, "key", "UTC")
 
         schedule_inputs_changed = any(
-            value is not None for value in (recurrence_rule, start_time, timezone_name)
+            value is not None for value in (recurrence_rule, start_time, fields.get("timezone", None))
         )
 
         recurrence_source = (
@@ -129,12 +133,9 @@ class TriggerService:
         else:
             stored_recurrence = recurrence_source
 
-        next_trigger_dt = (
-            parse_iso(existing.next_trigger)
-            if existing.next_trigger
-            else None
-        )
-        now = utc_now()
+        # existing.next_trigger is now a datetime in user timezone
+        next_trigger_dt = existing.next_trigger
+        now = now_in_user_timezone()
         should_recompute_schedule = schedule_inputs_changed
 
         if status_changed_to_active:
@@ -161,9 +162,7 @@ class TriggerService:
                 and next_fire <= now
             ):
                 next_fire = now
-            fields["next_trigger"] = (
-                to_storage_timestamp(next_fire) if next_fire else None
-            )
+            fields["next_trigger"] = next_fire
             if schedule_inputs_changed:
                 fields["recurrence_rule"] = stored_recurrence
         elif schedule_inputs_changed:
@@ -186,8 +185,17 @@ class TriggerService:
     def get_due_triggers(
         self, *, before: datetime, agent_name: Optional[str] = None
     ) -> List[TriggerRecord]:
-        iso_cutoff = to_storage_timestamp(before)
-        return self._store.fetch_due(agent_name, iso_cutoff)
+        """Get triggers due before the given datetime.
+        
+        The before parameter is interpreted in the user's timezone.
+        """
+        # Ensure before is in user timezone
+        if before.tzinfo is None:
+            tz = resolve_user_timezone()
+            before = before.replace(tzinfo=tz)
+        else:
+            before = convert_to_user_timezone(before)
+        return self._store.fetch_due(agent_name, before)
 
     def mark_as_completed(self, trigger_id: int, *, agent_name: str) -> None:
         self._store.update(
@@ -206,14 +214,24 @@ class TriggerService:
         *,
         fired_at: datetime,
     ) -> Optional[TriggerRecord]:
+        """Schedule the next occurrence of a trigger.
+        
+        The fired_at parameter is interpreted in the user's timezone.
+        """
         if not trigger.recurrence_rule:
             self.mark_as_completed(trigger.id, agent_name=trigger.agent_name)
             return self._store.fetch_one(trigger.id, trigger.agent_name)
 
-        tz = resolve_timezone(trigger.timezone)
+        # Ensure fired_at is in user timezone
+        tz = resolve_user_timezone()
+        if fired_at.tzinfo is None:
+            fired_at = fired_at.replace(tzinfo=tz)
+        else:
+            fired_at = convert_to_user_timezone(fired_at)
+
         next_fire = self._compute_next_after(trigger.recurrence_rule, fired_at, tz)
         fields: Dict[str, Any] = {
-            "next_trigger": to_storage_timestamp(next_fire) if next_fire else None,
+            "next_trigger": next_fire,
             "last_error": None,
         }
         if next_fire is None:

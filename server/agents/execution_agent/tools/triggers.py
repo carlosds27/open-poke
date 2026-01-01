@@ -126,12 +126,10 @@ def _create_trigger_tool(
     start_time: Optional[str] = None,
     status: Optional[str] = None,
 ) -> Dict[str, Any]:
-    timezone_value = get_timezone_store().get_timezone()
     start_time = start_time.replace("Z", "") if start_time else None# LLM will always return a timestamp with a Z suffix
     summary_args = {
         "recurrence_rule": recurrence_rule,
         "start_time": start_time,
-        "timezone": timezone_value,
         "status": status,
     }
     try:
@@ -140,7 +138,6 @@ def _create_trigger_tool(
             payload=payload,
             recurrence_rule=recurrence_rule,
             start_time=start_time,
-            timezone_name=timezone_value,
             status=status,
         )
     except Exception as exc:  # pragma: no cover - defensive

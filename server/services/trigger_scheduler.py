@@ -9,18 +9,8 @@ from typing import Optional, Set
 from ..agents.execution_agent.batch_manager import ExecutionBatchManager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
+from ..utils.timezones import convert_to_user_timezone, now_in_user_timezone
 from .triggers import TriggerRecord, get_trigger_service
-
-
-UTC = timezone.utc
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
-def _isoformat(dt: datetime) -> str:
-    return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class TriggerScheduler:
@@ -66,7 +56,7 @@ class TriggerScheduler:
             logger.exception("Trigger scheduler loop crashed", extra={"error": str(exc)})
 
     async def _poll_once(self) -> None:
-        now = _utc_now()
+        now = now_in_user_timezone()
         due_triggers = self._service.get_due_triggers(before=now)
         if not due_triggers:
             return
@@ -79,14 +69,14 @@ class TriggerScheduler:
 
     async def _execute_trigger(self, trigger: TriggerRecord) -> None:
         try:
-            fired_at = _utc_now()
+            fired_at = now_in_user_timezone()
             instructions = self._format_instructions(trigger, fired_at)
             logger.info(
                 "Dispatching trigger",
                 extra={
                     "trigger_id": trigger.id,
                     "agent": trigger.agent_name,
-                    "scheduled_for": trigger.next_trigger,
+                    "scheduled_for": trigger.next_trigger.isoformat() if trigger.next_trigger else None,
                 },
             )
             execution_manager = ExecutionBatchManager()
@@ -100,7 +90,7 @@ class TriggerScheduler:
                 error_text = result.error or result.response
                 self._handle_failure(trigger, fired_at, error_text)
         except Exception as exc:  # pragma: no cover - defensive
-            self._handle_failure(trigger, _utc_now(), str(exc))
+            self._handle_failure(trigger, now_in_user_timezone(), str(exc))
             logger.exception(
                 "Trigger execution failed unexpectedly",
                 extra={"trigger_id": trigger.id, "agent": trigger.agent_name},
@@ -131,19 +121,20 @@ class TriggerScheduler:
             self._service.clear_next_fire(trigger.id, agent_name=trigger.agent_name)
 
     def _format_instructions(self, trigger: TriggerRecord, fired_at: datetime) -> str:
-        scheduled_for = trigger.next_trigger or _isoformat(fired_at)
+        # trigger.next_trigger is now a datetime in user timezone
+        scheduled_for = trigger.next_trigger if trigger.next_trigger else fired_at
         metadata_lines = [f"Trigger ID: {trigger.id}"]
         if trigger.recurrence_rule:
             metadata_lines.append(f"Recurrence: {trigger.recurrence_rule}")
         if trigger.timezone:
             metadata_lines.append(f"Timezone: {trigger.timezone}")
         if trigger.start_time:
-            metadata_lines.append(f"Start Time (UTC): {trigger.start_time}")
+            metadata_lines.append(f"Start Time: {trigger.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         metadata = "\n".join(f"- {line}" for line in metadata_lines)
         return (
-            f"Trigger fired at {_isoformat(fired_at)} (UTC).\n"
-            f"Scheduled occurrence time: {scheduled_for}.\n\n"
+            f"Trigger fired at {fired_at.strftime('%Y-%m-%d %H:%M:%S')}.\n"
+            f"Scheduled occurrence time: {scheduled_for.strftime('%Y-%m-%d %H:%M:%S')}.\n\n"
             f"Metadata:\n{metadata}\n\n"
             f"Payload:\n{trigger.payload}"
         )

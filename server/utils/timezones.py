@@ -71,11 +71,43 @@ def convert_to_user_timezone(dt: datetime, *, default: str = "UTC") -> datetime:
         )
         return dt.astimezone(ZoneInfo(default))
 
+def format_datetime_for_mcp(dt: datetime) -> str:
+    """Format datetime in YYYY-MM-DD HH:MM:SS format for MCP tools.
+    
+    The datetime is assumed to be in the user's timezone.
+    """
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def parse_datetime_from_mcp(dt_str: str, *, default: str = "UTC") -> datetime:
+    """Parse datetime from YYYY-MM-DD HH:MM:SS format (MCP tool format).
+    
+    The datetime string is interpreted in the user's timezone.
+    """
+    from dateutil import parser as date_parser
+    
+    # Try parsing as YYYY-MM-DD HH:MM:SS first
+    try:
+        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+        tz = resolve_user_timezone(default)
+        return dt.replace(tzinfo=tz)
+    except ValueError:
+        # Fallback to ISO format parsing
+        dt = date_parser.isoparse(dt_str)
+        if dt.tzinfo is None:
+            tz = resolve_user_timezone(default)
+            dt = dt.replace(tzinfo=tz)
+        else:
+            dt = convert_to_user_timezone(dt, default=default)
+        return dt
+
 
 __all__ = [
     "UTC",
     "convert_to_user_timezone",
+    "format_datetime_for_mcp",
     "get_user_timezone_name",
     "now_in_user_timezone",
+    "parse_datetime_from_mcp",
     "resolve_user_timezone",
 ]

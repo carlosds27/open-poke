@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from ..database.mongodb import MongoDB
 from ...logging_config import logger
+from ...utils.timezones import resolve_user_timezone
 from .models import TriggerRecord
-from .utils import to_storage_timestamp, utc_now
 
 
 class TriggerStore:
@@ -52,7 +53,7 @@ class TriggerStore:
             return False
         update_fields = {
             **fields,
-            "updated_at": to_storage_timestamp(utc_now()),
+            "updated_at": datetime.now(timezone.utc),
         }
         result = self._collection.update_one(
             {"id": trigger_id, "agent_name": agent_name}, {"$set": update_fields}
@@ -67,11 +68,13 @@ class TriggerStore:
         return [self._doc_to_record(doc) for doc in cursor]
 
     def fetch_due(
-        self, agent_name: Optional[str], before_iso: str
+        self, agent_name: Optional[str], before: datetime
     ) -> List[TriggerRecord]:
+        # Convert datetime to UTC string for query
+        before_utc = before.astimezone(timezone.utc)
         query: Dict[str, Any] = {
             "status": "active",
-            "next_trigger": {"$ne": None, "$lte": before_iso},
+            "next_trigger": {"$ne": None, "$lte": before_utc},
         }
         if agent_name:
             query["agent_name"] = agent_name
@@ -85,6 +88,10 @@ class TriggerStore:
     def _doc_to_record(self, doc: Dict[str, Any]) -> TriggerRecord:
         # Remove MongoDB's _id field if present, keep our id field
         data = {k: v for k, v in doc.items() if k != "_id"}
+        data["start_time"] = data["start_time"].astimezone(resolve_user_timezone()) if data["start_time"] else None
+        data["next_trigger"] = data["next_trigger"].astimezone(resolve_user_timezone()) if data["next_trigger"] else None
+        data["created_at"] = data["created_at"].astimezone(resolve_user_timezone()) if data["created_at"] else None
+        data["updated_at"] = data["updated_at"].astimezone(resolve_user_timezone()) if data["updated_at"] else None
         return TriggerRecord.model_validate(data)
 
 
