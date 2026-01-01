@@ -16,11 +16,11 @@ def get_task_schemas() -> List[Dict[str, Any]]:
 
 
 # Return executable task tools keyed by name
-def get_task_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
+def get_task_registry() -> Dict[str, Callable[..., Any]]:
     """Return executable task tools keyed by name."""
 
     registry: Dict[str, Callable[..., Any]] = {}
-    registry.update(_build_email_search_registry(agent_name))
+    registry.update(_build_email_search_registry())
     return registry
 
 

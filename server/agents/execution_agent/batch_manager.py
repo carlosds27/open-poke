@@ -59,7 +59,9 @@ class ExecutionBatchManager:
 
         try:
             logger.info(f"[{agent_name}] Execution started")
-            runtime = ExecutionAgentRuntime(agent_name=agent_name)
+            # TODO: Make this dynamic based on instructions receive
+            runtime = ExecutionAgentRuntime(agent_name=agent_name, tools=["gmail_tool", "trigger_tool"])
+            await runtime.initialize()
             result = await asyncio.wait_for(
                 runtime.execute(instructions),
                 timeout=self.timeout_seconds,

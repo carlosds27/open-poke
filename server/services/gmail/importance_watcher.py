@@ -105,11 +105,12 @@ class ImportantEmailWatcher:
         user_now = convert_to_user_timezone(poll_started_at)
         first_poll = not self._has_seeded_initial_snapshot
         previous_poll_timestamp = self._last_poll_timestamp
-        interval_cutoff = user_now - timedelta(seconds=self._poll_interval)
+        # Added a buffer to the interval cutoff to avoid eligible emails being missed (treated as aged)
+        interval_cutoff = user_now - timedelta(seconds=(self._poll_interval * 2))
         cutoff_time = interval_cutoff
         if (
             previous_poll_timestamp is not None
-            and previous_poll_timestamp > interval_cutoff
+            and previous_poll_timestamp - timedelta(seconds=self._poll_interval) > interval_cutoff
         ):
             cutoff_time = previous_poll_timestamp
 

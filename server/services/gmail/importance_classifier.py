@@ -134,6 +134,7 @@ async def classify_email_importance(email: ProcessedEmail) -> Optional[str]:
         summary = arguments.get("summary")
 
         if not important:
+            logger.info(f"Email {email.id} is not important")
             return None
 
         if not isinstance(summary, str) or not summary.strip():
@@ -145,8 +146,8 @@ async def classify_email_importance(email: ProcessedEmail) -> Optional[str]:
 
         return summary.strip()
 
-    logger.debug(
-        "Importance classification produced no tool call",
+    logger.info(
+        f"Email {email.id} produced no tool call",
         extra={"message_id": email.id},
     )
     return None

@@ -4,21 +4,17 @@ import logging
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp import Client
 from server.mcp_server.auth import get_mcp_authenticator
-from server.mcp_server import get_mcp_server_mapping
 from mcp.types import TextContent, ImageContent, EmbeddedResource
 from typing import List
 
 logger = logging.getLogger("MCPClient")
 MCP_AUTHENTICATOR = get_mcp_authenticator()
-MCP_SERVER_MAPPING = get_mcp_server_mapping()
 
 class SimpleMCPClient:
     """Simple MCP client that connects directly to MCP servers"""
 
-    def __init__(self, mcp_server_name: str, agent_name: str):
-        self.mcp_server_name = mcp_server_name
-        self.mcp_url = MCP_SERVER_MAPPING[mcp_server_name]
-
+    def __init__(self, mcp_url: str, agent_name: str):
+        self.mcp_url = mcp_url
         transport = StreamableHttpTransport(
             url=self.mcp_url,
             headers={

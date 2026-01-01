@@ -517,7 +517,7 @@ def gmail_search_people(
 
 
 # Return Gmail tool callables
-def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
+def build_registry() -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
     """Return Gmail tool callables."""
     
     return {

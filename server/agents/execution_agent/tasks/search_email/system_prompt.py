@@ -75,7 +75,8 @@ def get_system_prompt() -> str:
         "6. **Select results** - call `return_search_results` with message IDs that best match intent\n"
         "\n"
         "Be thorough and strategic - use Gmail's search power AND content analysis to find exactly what the user needs!"
-        "ALWAYS call `return_search_results` with message IDs that best match intent BEFORE stopping the search!"
+        "ALWAYS call `return_search_results` with message IDs that best match intent BEFORE stopping the search",
+        "NEVER end the search without calling `return_search_results`, even if no emails are found (return an empty list)",
     )
 
 

@@ -2,15 +2,19 @@
 
 import inspect
 import json
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Callable
 from dataclasses import dataclass
+from mcp.types import Tool
 
 from .agent import ExecutionAgent
 from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
+from .mcp_client import SimpleMCPClient, convert_mcp_tool_to_tool_schema, convert_mcp_tool_result_to_dict
+from server.mcp_server import get_mcp_server_mapping
 
+MCP_SERVER_MAPPING = get_mcp_server_mapping()
 
 @dataclass
 class ExecutionResult:
@@ -28,16 +32,39 @@ class ExecutionAgentRuntime:
     MAX_TOOL_ITERATIONS = 8
 
     # Initialize execution agent runtime with settings, tools, and agent instance
-    def __init__(self, agent_name: str):
+    def __init__(self, agent_name: str, tools: List[str]):
         settings = get_settings()
         self.agent = ExecutionAgent(agent_name)
         self.api_key = settings.openrouter_api_key
         self.model = settings.execution_agent_model
-        self.tool_registry = get_tool_registry(agent_name=agent_name)
-        self.tool_schemas = get_tool_schemas()
+        self.tools_requested = tools
+        # There will be 2 types of tools:
+        self.tool_schemas: List[Dict[str, Any]] = []
+        # 1. MCP tools
+        self.mcp_tools: List[str] = []
+        self.tool_name_to_mcp_client: Dict[str, SimpleMCPClient] = {}
+        # 2. Direct tools
+        self.app_tools: List[str] = []
+        self.tool_name_to_app_tool: Dict[str, Callable[..., Any]] = {}
 
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
+
+    async def initialize(self) -> None:
+        """Initialize the execution agent runtime."""
+        await self._identify_requested_tools()
+        await self._init_tool_schema()
+
+    async def _identify_requested_tools(self) -> None:
+        """Identify the requested tools. Whether they are MCP tools or app tools."""
+        for tool in self.tools_requested:
+            # Check if in App first
+            if tool in get_tool_registry() and tool in get_tool_schemas():
+                self.app_tools.append(tool)
+            elif tool in MCP_SERVER_MAPPING:
+                self.mcp_tools.append(tool)
+            else:
+                logger.warning(f"[{self.agent.name}] Unknown tool: {tool}")
 
     # Main execution loop for running agent with LLM calls and tool execution
     async def execute(self, instructions: str) -> ExecutionResult:
@@ -220,10 +247,39 @@ class ExecutionAgentRuntime:
             }
         return self._safe_json_dump(payload)
 
-    # Execute tool function from registry with error handling and async support
+    async def _init_tool_schema(self) -> None:
+        for app_tool in self.app_tools:
+            tool_schema = get_tool_schemas()[app_tool]
+            tool_registry = get_tool_registry()[app_tool]
+            self.tool_schemas.extend(tool_schema)
+            self.tool_name_to_app_tool.update(tool_registry)
+        for mcp_tool in self.mcp_tools:
+            try:
+                mcp_url = MCP_SERVER_MAPPING[mcp_tool]
+                client = SimpleMCPClient(mcp_url=mcp_url, agent_name=self.agent.name)
+                await client.connect()
+                tools = client.get_tools()
+                for tool in tools:
+                    tool_name = tool.name
+                    tool_schema = await convert_mcp_tool_to_tool_schema(tool)
+                    self.tool_schemas.append(tool_schema)
+                    self.tool_name_to_mcp_client[tool_name] = client
+            except Exception as e:
+                logger.error(f"[{self.agent.name}] Error initializing MCP client for {mcp_tool}: {e}")
+   
     async def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
         """Execute a tool. Returns (success, result)."""
-        tool_func = self.tool_registry.get(tool_name)
+        if tool_name in self.tool_name_to_app_tool:
+            return await self._execute_app_tool(tool_name, arguments)
+        elif tool_name in self.tool_name_to_mcp_client:
+            return await self._execute_mcp_tool(tool_name, arguments)
+        else:
+            return False, {"error": f"Unknown tool: {tool_name}"}
+   
+   # Execute tool function from registry with error handling and async support
+    async def _execute_app_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
+        """Execute a tool. Returns (success, result)."""
+        tool_func = self.tool_name_to_app_tool.get(tool_name)
         if not tool_func:
             return False, {"error": f"Unknown tool: {tool_name}"}
 
@@ -232,5 +288,19 @@ class ExecutionAgentRuntime:
             if inspect.isawaitable(result):
                 result = await result
             return True, result
+        except Exception as e:
+            return False, {"error": str(e)}
+
+    # MCP Client functions
+    async def _execute_mcp_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
+        """Execute an MCP tool. Returns (success, result)."""
+        try:
+            mcp_client = self.tool_name_to_mcp_client.get(tool_name)
+            if not mcp_client:
+                return False, {"error": f"Unknown tool: {tool_name}"}
+
+            result = await mcp_client.call_tool(tool_name, arguments)
+            result_dict = await convert_mcp_tool_result_to_dict(result)
+            return True, result_dict
         except Exception as e:
             return False, {"error": str(e)}

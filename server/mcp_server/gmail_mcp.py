@@ -1,6 +1,6 @@
 from typing import Annotated, Optional, List, Dict, Any
-from fastmcp import FastMCP
 import json
+from server.mcp_server.base import OpenPokeMCP
 from server.services.execution import get_execution_agent_logs
 from server.services.gmail import execute_gmail_tool, get_active_gmail_user_id
 from server.agents.execution_agent.tasks.search_email.tool import task_email_search
@@ -8,7 +8,7 @@ from server.agents.execution_agent.tasks.search_email.tool import task_email_sea
 _GMAIL_AGENT_NAME = "gmail-execution-agent"
 _LOG_STORE = get_execution_agent_logs()
 
-mcp = FastMCP(
+mcp = OpenPokeMCP(
     name="gmail_mcp",
     version="1.0.0",
     instructions="This server provides all the necessary tools related to Gmail operations.",

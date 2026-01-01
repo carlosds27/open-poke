@@ -81,7 +81,7 @@ def _validate_openrouter_config() -> Tuple[Optional[str], Optional[str]]:
 
 
 # Return task tool callables
-def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
+def build_registry() -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
     """Return task tool callables."""
 
     return {
@@ -239,6 +239,7 @@ async def _execute_tool_calls(
 
         elif name == COMPLETE_TOOL_NAME:
             # Handle completion tool - signals end of search
+            logger.info(f"[EMAIL_SEARCH_COMPLETE] Completion tool called")
             completion_ids_candidate, response_data = _handle_completion_tool(arguments)
             responses.append(_create_success_response(call_id, response_data))
             if completion_ids_candidate is not None:

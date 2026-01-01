@@ -51,9 +51,19 @@ class OpenPokeMCP(FastMCP):
         valid_parameters = set(tool_properties.keys())
         # Filter out the extra parameters
         filtered_arguments = {
-            k: v for k, v in arguments.items() if k in valid_parameters
+            k: self.norm(v) for k, v in arguments.items() if k in valid_parameters
         }
         # If agent_name in valid_parameters, fill it in automatically with the agent_name
         if "agent_name" in valid_parameters:
             filtered_arguments["agent_name"] = agent_name
         return filtered_arguments
+
+    def norm(self, val: Any) -> Any:
+        if val is None:
+            return None
+        if isinstance(val, str):
+            normalized = val.strip()
+            if not normalized or normalized.lower() == "none":
+                return None
+            return normalized
+        return val
