@@ -171,7 +171,28 @@ async def _run_email_search(
         # Handle case where LLM doesn't make tool calls
         if not tool_calls:
             logger.info(f"[EMAIL_SEARCH] LLM completed search - no more queries needed")
-            selected_ids = []
+            # If emails exist, run llm once more (forcing completion tool) to return relevant emails
+            if emails:
+                response = await request_chat_completion(
+                    model=model,
+                    messages=messages,
+                    system=get_system_prompt(),
+                    api_key=api_key,
+                    tools=[GMAIL_FETCH_EMAILS_SCHEMA, _COMPLETION_TOOL_SCHEMA],
+                    tool_choice=[{
+                        "type": "function",
+                        "function": {"name": COMPLETE_TOOL_NAME},
+                    }],
+                )
+                assistant = _extract_assistant_message(response)
+                tool_calls = assistant.get("tool_calls") or []
+                tool_responses, completed_ids = await _execute_tool_calls(
+                    tool_calls=tool_calls,
+                    queries=queries,
+                    emails=emails,
+                    composio_user_id=composio_user_id,
+                )
+                selected_ids = completed_ids
             break
         
         # Execute tool calls and process responses
