@@ -221,3 +221,11 @@
    ```
 
 **Note:** Make sure to use `.venv` (virtual environment) when running the backend or MCP servers.
+
+## 🔮 Future Improvements
+
+1. **Use Mem0 for user preferences and information storage** - Instead of extracting user information from emails, use Mem0 to store and manage user preferences and information.
+
+2. **Voice input support** - Allow users to speak instead of typing by implementing a "press-and-hold" button in the frontend to record their requests and transcribe them using a speech-to-text (STT) model.
+
+3. **Multimodal input and output** - Support multiple media types including images, audio, and video for both input and output.
