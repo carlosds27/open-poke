@@ -84,7 +84,6 @@ def parse_datetime_from_mcp(dt_str: str, *, default: str = "UTC") -> datetime:
     
     The datetime string is interpreted in the user's timezone.
     """
-    from dateutil import parser as date_parser
     
     # Try parsing as YYYY-MM-DD HH:MM:SS first
     try:
@@ -92,14 +91,7 @@ def parse_datetime_from_mcp(dt_str: str, *, default: str = "UTC") -> datetime:
         tz = resolve_user_timezone(default)
         return dt.replace(tzinfo=tz)
     except ValueError:
-        # Fallback to ISO format parsing
-        dt = date_parser.isoparse(dt_str)
-        if dt.tzinfo is None:
-            tz = resolve_user_timezone(default)
-            dt = dt.replace(tzinfo=tz)
-        else:
-            dt = convert_to_user_timezone(dt, default=default)
-        return dt
+        raise ValueError(f"Invalid datetime string: {dt_str}. Should be in YYYY-MM-DD HH:MM:SS format.")
 
 
 __all__ = [

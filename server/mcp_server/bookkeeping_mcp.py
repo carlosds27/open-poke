@@ -27,7 +27,7 @@ async def _bookkeeping_record_to_payload(record: BookkeepingRecord) -> Dict[str,
         "amount": record.amount,
         "category": record.category,
         "description": record.description,
-        "date": format_datetime_for_mcp(record.date) if isinstance(record.date, datetime) else str(record.date),
+        "date_time": format_datetime_for_mcp(record.date_time) if isinstance(record.date_time, datetime) else str(record.date_time),
         "created_at": format_datetime_for_mcp(record.created_at) if isinstance(record.created_at, datetime) else str(record.created_at),
         "updated_at": format_datetime_for_mcp(record.updated_at) if isinstance(record.updated_at, datetime) else str(record.updated_at),
     }
@@ -40,7 +40,7 @@ async def create_record(
     amount: Annotated[float, "Amount of money (must be positive)."],
     category: Annotated[str, "Category of the record (e.g., 'food', 'grocery', 'gift', 'salary', 'freelance', etc.)."],
     description: Annotated[Optional[str], "Optional description of the record."],
-    date: Annotated[Optional[str], "Date in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone). Defaults to today if omitted."],
+    date_time: Annotated[Optional[str], "Date and time in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone). Defaults to today if omitted."],
 ) -> dict:
     """Create a new bookkeeping record (income or expense)."""
     summary_args = {
@@ -48,16 +48,16 @@ async def create_record(
         "amount": amount,
         "category": category,
         "description": description,
-        "date": date,
+        "date_time": date_time,
     }
     try:
-        date_dt = parse_datetime_from_mcp(date) if date else None
+        date_time_dt = parse_datetime_from_mcp(date_time) if date_time else None
         record = _BOOKKEEPING_SERVICE.create_record(
             record_type=record_type,
             amount=amount,
             category=category,
             description=description,
-            date=date_dt,
+            date_time=date_time_dt,
         )
     except Exception as exc:
         _LOG_STORE.record_action(
@@ -80,7 +80,7 @@ async def update_record(
     amount: Annotated[Optional[float], "Update the amount (optional, must be positive)."],
     category: Annotated[Optional[str], "Update the category (optional)."],
     description: Annotated[Optional[str], "Update the description (optional)."],
-    date: Annotated[Optional[str], "Update the date in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone, optional)."],
+    date_time: Annotated[Optional[str], "Update the date and time in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone, optional)."],
 ) -> dict:
     """Update an existing bookkeeping record."""
     try:
@@ -88,14 +88,14 @@ async def update_record(
     except (TypeError, ValueError):
         return {"error": "record_id must be an integer"}
     try:
-        date_dt = parse_datetime_from_mcp(date) if date else None
+        date_time_dt = parse_datetime_from_mcp(date_time) if date_time else None
         record = _BOOKKEEPING_SERVICE.update_record(
             record_id_int,
             record_type=record_type,
             amount=amount,
             category=category,
             description=description,
-            date=date_dt,
+            date_time=date_time_dt,
         )
     except Exception as exc:
         _LOG_STORE.record_action(
@@ -154,18 +154,18 @@ async def delete_record(
 async def list_records(
     agent_name: Annotated[Optional[str], "Leave this blank."],
     record_type: Annotated[Optional[str], "Filter by record type: 'income' or 'expense' (optional)."],
-    start_date: Annotated[Optional[str], "Filter records from this date in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone, optional)."],
-    end_date: Annotated[Optional[str], "Filter records until this date in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone, optional)."],
+    start_date_time: Annotated[Optional[str], "Filter records from this date and time in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone, optional)."],
+    end_date_time: Annotated[Optional[str], "Filter records until this date and time in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone, optional)."],
     category: Annotated[Optional[str], "Filter by category (optional)."],
 ) -> dict:
     """List all bookkeeping records with optional filters."""
     try:
-        start_date_dt = parse_datetime_from_mcp(start_date) if start_date else None
-        end_date_dt = parse_datetime_from_mcp(end_date) if end_date else None
+        start_date_time_dt = parse_datetime_from_mcp(start_date_time) if start_date_time else None
+        end_date_time_dt = parse_datetime_from_mcp(end_date_time) if end_date_time else None
         records = _BOOKKEEPING_SERVICE.list_records(
             record_type=record_type,
-            start_date=start_date_dt,
-            end_date=end_date_dt,
+            start_date_time=start_date_time_dt,
+            end_date_time=end_date_time_dt,
             category=category,
         )
     except Exception as exc:
@@ -184,32 +184,32 @@ async def list_records(
 @mcp.tool(name="getExpenseSummary")
 async def get_expense_summary(
     agent_name: Annotated[Optional[str], "Leave this blank."],
-    start_date: Annotated[str, "Start date for the summary period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
-    end_date: Annotated[str, "End date for the summary period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
+    start_date_time: Annotated[str, "Start date and time for the summary period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
+    end_date_time: Annotated[str, "End date and time for the summary period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
     category: Annotated[Optional[str], "Filter by specific category (optional)."],
 ) -> dict:
     """Get a summary of expenses for a specific time period."""
     try:
-        start_date_dt = parse_datetime_from_mcp(start_date) if start_date else None
-        end_date_dt = parse_datetime_from_mcp(end_date) if end_date else None
+        start_date_time_dt = parse_datetime_from_mcp(start_date_time) if start_date_time else None
+        end_date_time_dt = parse_datetime_from_mcp(end_date_time) if end_date_time else None
         summary = _BOOKKEEPING_SERVICE.get_expense_summary(
-            start_date=start_date_dt,
-            end_date=end_date_dt,
+            start_date_time=start_date_time_dt,
+            end_date_time=end_date_time_dt,
             category=category,
         )
     except Exception as exc:
         _LOG_STORE.record_action(
             agent_name,
-            description=f"getExpenseSummary failed | start_date={start_date} | end_date={end_date} | error={exc}",
+            description=f"getExpenseSummary failed | start_date_time={start_date_time} | end_date_time={end_date_time} | error={exc}",
         )
         return {"error": str(exc)}
     _LOG_STORE.record_action(
         agent_name,
-        description=f"getExpenseSummary succeeded | start_date={start_date} | end_date={end_date}",
+        description=f"getExpenseSummary succeeded | start_date_time={start_date_time} | end_date_time={end_date_time}",
     )
     return {
-        "start_date": start_date,
-        "end_date": end_date,
+        "start_date_time": start_date_time,
+        "end_date_time": end_date_time,
         "total_amount": summary.get("total_amount", 0.0),
         "record_count": summary.get("record_count", 0),
         "by_category": summary.get("by_category", {}),
@@ -219,28 +219,28 @@ async def get_expense_summary(
 @mcp.tool(name="getCashflow")
 async def get_cashflow(
     agent_name: Annotated[Optional[str], "Leave this blank."],
-    start_date: Annotated[str, "Start date for the cashflow period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
-    end_date: Annotated[str, "End date for the cashflow period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
+    start_date_time: Annotated[str, "Start date and time for the cashflow period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
+    end_date_time: Annotated[str, "End date and time for the cashflow period in YYYY-MM-DD HH:MM:SS format (interpreted in user's timezone)."],
 ) -> dict:
     """Get cashflow report (income vs expenses) for a specific time period."""
     try:
         cashflow = _BOOKKEEPING_SERVICE.get_cashflow(
-            start_date=start_date,
-            end_date=end_date,
+            start_date_time=start_date_time,
+            end_date_time=end_date_time,
         )
     except Exception as exc:
         _LOG_STORE.record_action(
             agent_name,
-            description=f"getCashflow failed | start_date={start_date} | end_date={end_date} | error={exc}",
+            description=f"getCashflow failed | start_date_time={start_date_time} | end_date_time={end_date_time} | error={exc}",
         )
         return {"error": str(exc)}
     _LOG_STORE.record_action(
         agent_name,
-        description=f"getCashflow succeeded | start_date={start_date} | end_date={end_date}",
+        description=f"getCashflow succeeded | start_date_time={start_date_time} | end_date_time={end_date_time}",
     )
     return {
-        "start_date": start_date,
-        "end_date": end_date,
+        "start_date_time": start_date_time,
+        "end_date_time": end_date_time,
         "total_income": cashflow.get("total_income", 0.0),
         "total_expense": cashflow.get("total_expense", 0.0),
         "net_cashflow": cashflow.get("net_cashflow", 0.0),

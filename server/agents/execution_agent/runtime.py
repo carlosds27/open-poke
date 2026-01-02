@@ -301,6 +301,10 @@ class ExecutionAgentRuntime:
 
             result = await mcp_client.call_tool(tool_name, arguments)
             result_dict = await convert_mcp_tool_result_to_dict(result)
+            if isinstance(result_dict, str) and "error" in result_dict.lower():
+                return False, {"error": result_dict}
+            elif isinstance(result_dict, dict) and "error" in result_dict:
+                return False, {"error": result_dict["error"]}
             return True, result_dict
         except Exception as e:
             return False, {"error": str(e)}

@@ -22,11 +22,11 @@ class BookkeepingService:
         amount: float,
         category: str,
         description: Optional[str] = None,
-        date: Optional[datetime] = None,
+        date_time: Optional[datetime] = None,
     ) -> BookkeepingRecord:
         """Create a new bookkeeping record (income or expense).
         
-        The date parameter is interpreted in the user's timezone.
+        The date_time parameter is interpreted in the user's timezone.
         """
         if record_type not in ["income", "expense"]:
             raise ValueError("record_type must be 'income' or 'expense'")
@@ -35,14 +35,14 @@ class BookkeepingService:
             raise ValueError("amount must be positive")
         
         now = now_in_user_timezone()
-        record_date = date if date else now
+        record_date_time = date_time if date_time else now
         
         record: Dict[str, Any] = {
             "record_type": record_type,
             "amount": float(amount),
             "category": category,
             "description": description,
-            "date": record_date,
+            "date_time": record_date_time,
             "created_at": now,
             "updated_at": now,
         }
@@ -60,11 +60,11 @@ class BookkeepingService:
         amount: Optional[float] = None,
         category: Optional[str] = None,
         description: Optional[str] = None,
-        date: Optional[datetime] = None,
+        date_time: Optional[datetime] = None,
     ) -> Optional[BookkeepingRecord]:
         """Update an existing bookkeeping record.
         
-        The date parameter is interpreted in the user's timezone.
+        The date_time parameter is interpreted in the user's timezone.
         """
         existing = self._store.fetch_one(record_id)
         if existing is None:
@@ -85,8 +85,8 @@ class BookkeepingService:
             fields["category"] = category
         if description is not None:
             fields["description"] = description
-        if date is not None:
-            fields["date"] = date
+        if date_time is not None:
+            fields["date_time"] = date_time
 
         if not fields:
             return existing
@@ -99,12 +99,16 @@ class BookkeepingService:
         """Delete a bookkeeping record."""
         return self._store.delete(record_id)
 
+    def clear_all(self) -> None:
+        """Clear all bookkeeping records."""
+        self._store.clear_all()
+
     def list_records(
         self,
         *,
         record_type: Optional[str] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        start_date_time: Optional[datetime] = None,
+        end_date_time: Optional[datetime] = None,
         category: Optional[str] = None,
     ) -> List[BookkeepingRecord]:
         """List bookkeeping records with optional filters.
@@ -113,22 +117,22 @@ class BookkeepingService:
         """
         return self._store.list_records(
             record_type=record_type,
-            start_date=start_date,
-            end_date=end_date,
+            start_date_time=start_date_time,
+            end_date_time=end_date_time,
             category=category,
         )
 
     def get_expense_summary(
         self,
         *,
-        start_date: datetime,
-        end_date: datetime,
+        start_date_time: datetime,
+        end_date_time: datetime,
         category: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get summary of expenses for a date range."""
         return self._store.get_summary(
-            start_date=start_date,
-            end_date=end_date,
+            start_date_time=start_date_time,
+            end_date_time=end_date_time,
             record_type="expense",
             category=category,
         )
@@ -136,13 +140,13 @@ class BookkeepingService:
     def get_cashflow(
         self,
         *,
-        start_date: datetime,
-        end_date: datetime,
+        start_date_time: datetime,
+        end_date_time: datetime,
     ) -> Dict[str, Any]:
         """Get cashflow (income vs expense) for a date range."""
         return self._store.get_cashflow(
-            start_date=start_date,
-            end_date=end_date,
+            start_date_time=start_date_time,
+            end_date_time=end_date_time,
         )
 
 

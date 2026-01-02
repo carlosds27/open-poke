@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from ..models import ChatHistoryClearResponse, ChatHistoryResponse, ChatRequest
-from ..services import get_conversation_log, get_trigger_service, handle_chat_request
+from ..services import get_bookkeeping_service, get_conversation_log, get_trigger_service, handle_chat_request
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -41,6 +41,10 @@ def clear_history() -> ChatHistoryClearResponse:
     # Clear stored triggers
     trigger_service = get_trigger_service()
     trigger_service.clear_all()
+
+    # Clear bookkeeping records
+    bookkeeping_service = get_bookkeeping_service()
+    bookkeeping_service.clear_all()
 
     return ChatHistoryClearResponse()
 

@@ -16,7 +16,7 @@ class BookkeepingRecord(BaseModel):
     amount: float
     category: str  # e.g., "food", "grocery", "gift", "salary", etc.
     description: Optional[str] = None
-    date: datetime
+    date_time: datetime
     created_at: datetime
     updated_at: datetime
 
