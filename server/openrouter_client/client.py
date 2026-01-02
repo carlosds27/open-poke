@@ -55,6 +55,7 @@ async def request_chat_completion(
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[str | Dict[str, Any]] = None,
     base_url: str = OpenRouterBaseURL,
+    additional_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Request a chat completion and return the raw JSON payload."""
 
@@ -67,6 +68,8 @@ async def request_chat_completion(
         payload["tools"] = tools
     if tool_choice:
         payload["tool_choice"] = tool_choice
+    if additional_payload:
+        payload.update(additional_payload)
 
     url = f"{base_url.rstrip('/')}/chat/completions"
 

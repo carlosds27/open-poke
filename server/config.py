@@ -56,6 +56,8 @@ class Settings(BaseModel):
     execution_agent_search_model: str = Field(default="xiaomi/mimo-v2-flash:free")
     summarizer_model: str = Field(default="xiaomi/mimo-v2-flash:free")
     email_classifier_model: str = Field(default="xiaomi/mimo-v2-flash:free")
+    internet_search_model: str = Field(default="perplexity/sonar")
+    internet_search_deep_model: str = Field(default="perplexity/sonar-pro")
 
     # Credentials / integrations
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
