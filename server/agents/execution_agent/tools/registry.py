@@ -15,19 +15,23 @@ def get_tools() -> Dict[str, Any]:
     return {
         "gmail_tool": {
             "type": "func",
+            "description": "Tools related to Gmail and email search",
             "schema": gmail.get_schemas() + get_email_search_schemas(),
             "registry": gmail.build_registry() | _build_email_search_registry(),
         },
         "trigger_tool": {
             "type": "mcp",
+            "description": "Tools related to triggers, reminders and notifications",
             "url": "http://localhost:9141/triggers/mcp",
         },
         "bookkeeping_tool": {
             "type": "mcp",
+            "description": "Tools related to bookkeeping and expense tracking",
             "url": "http://localhost:9142/bookkeeping/mcp",
         },
         "perplexity_tool": {
             "type": "mcp",
+            "description": "Tools related to web search and information retrieval on the internet (up to date information)",
             "url": "http://localhost:9143/perplexity/mcp",
         },
     }

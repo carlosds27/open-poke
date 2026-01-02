@@ -60,7 +60,7 @@ class ExecutionBatchManager:
         try:
             logger.info(f"[{agent_name}] Execution started")
             # TODO: Make this dynamic based on instructions receive
-            runtime = ExecutionAgentRuntime(agent_name=agent_name, tools=["gmail_tool", "trigger_tool", "bookkeeping_tool", "perplexity_tool"])
+            runtime = ExecutionAgentRuntime(agent_name=agent_name)
             await runtime.initialize()
             result = await asyncio.wait_for(
                 runtime.execute(instructions),

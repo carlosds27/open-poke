@@ -10,6 +10,7 @@ class AgentObject(BaseModel):
     """Object representing an agent in the roster."""
     name: str = Field(..., description="The name of the agent.")
     description: str = Field(..., description="The description of the agent.")
+    tool_state: list[str] = Field(default_factory=list, description="The tool state of the agent.")
 
 class AgentRoster:
     """Roster that stores each agent as a separate document in MongoDB with vector search support."""
@@ -37,6 +38,29 @@ class AgentRoster:
                 extra={"error": str(exc)},
             )
 
+    async def get_agent_tool_state(self, agent_name: str) -> list[str]:
+        """Get the tool state for an agent."""
+        try:
+            result = self._collection.find_one({"name": agent_name})
+            return result.get("tool_state", [])
+        except Exception as exc:
+            logger.warning(
+                "Failed to get agent tool state",
+                extra={"error": str(exc), "agent_name": agent_name},
+            )
+            return []
+    
+    async def set_agent_tool_state(self, agent_name: str, tool_state: list[str]) -> None:
+        """Set the tool state for an agent."""
+        try:
+            self._collection.update_one({"name": agent_name}, {"$set": {"tool_state": tool_state}})
+            logger.info(f"Set agent tool state for {agent_name}: {', '.join(tool_state)}")
+        except Exception as exc:
+            logger.warning(
+                "Failed to set agent tool state",
+                extra={"error": str(exc), "agent_name": agent_name},
+            )
+
     async def _generate_embedding(self, description: str) -> list[float]:
         """Generate an embedding for the description using the embedding model."""
         return await generate_embedding(self._embedding_model, description, api_key=self._openrouter_api_key)
@@ -51,6 +75,7 @@ class AgentRoster:
                     AgentObject(
                         name=doc["name"],
                         description=doc["description"],
+                        tool_state=doc.get("tool_state", []),
                     )
                 )
         except Exception as exc:
@@ -63,7 +88,7 @@ class AgentRoster:
     async def add_agent(self, agent_name: str, agent_description: str) -> None:
         """Add an agent to the roster if not already present."""
         if agent_name not in self.get_agent_names():
-            agent = AgentObject(name=agent_name, description=agent_description)
+            agent = AgentObject(name=agent_name, description=agent_description, tool_state=[])
             
             # Save to MongoDB as a separate document
             try:
@@ -73,6 +98,7 @@ class AgentRoster:
                     "name": agent_name,
                     "description": agent_description,
                     "embedding": embedding,
+                    "tool_state": [],
                     "last_used_at": datetime.now(timezone.utc),
                 })
                 # Only add to in-memory list if save was successful
@@ -158,6 +184,7 @@ class AgentRoster:
                         AgentObject(
                             name=doc["name"],
                             description=doc["description"],
+                            tool_state=doc.get("tool_state", []),
                         )
                     )
             

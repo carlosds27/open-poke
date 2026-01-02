@@ -58,8 +58,9 @@ class SimpleMCPClient:
             await self._refresh_client()
             async with self.client:
                 result = await self.client.call_tool(tool_name, arguments)
+                result_str = str(result)[:100]
                 logger.info(
-                    f"[{datetime.now(timezone.utc)}] called tool {tool_name} with arguments {arguments} and result {result}"
+                    f"[{datetime.now(timezone.utc)}] called tool {tool_name} with arguments {arguments} and result {result_str}"
                 )
                 return result
         except Exception as e:

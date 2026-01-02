@@ -6,7 +6,9 @@ from typing import List, Optional, Dict, Any
 from ...services.execution import get_execution_agent_logs
 from ...logging_config import logger
 from ...utils.timezones import now_in_user_timezone
+from .tools.state import get_tool_state
 
+_TOOL_STATE = get_tool_state()
 
 # Load system prompt template from file
 _prompt_path = Path(__file__).parent / "system_prompt.md"
@@ -51,27 +53,30 @@ class ExecutionAgent:
         self._log_store = get_execution_agent_logs()
 
     # Generate system prompt template with agent name and purpose derived from name
-    def build_system_prompt(self) -> str:
+    async def build_system_prompt(self) -> str:
         """Build the system prompt for this agent."""
         agent_purpose = f"Handle tasks related to: {self.name}"
         now_time = now_in_user_timezone()
         now_time_str = now_time.strftime("%A, %d %B, %Y at %I:%M:%S %p")
 
+        tool_prompts = await _TOOL_STATE.get_tool_prompt_for_agent(self.name)
+
         return SYSTEM_PROMPT_TEMPLATE.format(
             agent_name=self.name,
             agent_purpose=agent_purpose,
-            current_time=now_time_str
+            current_time=now_time_str,
+            tool_prompts=tool_prompts
         )
 
     # Combine base system prompt with conversation history, applying conversation limits
-    def build_system_prompt_with_history(self) -> str:
+    async def build_system_prompt_with_history(self) -> str:
         """
         Build system prompt including agent history.
 
         Returns:
             System prompt with embedded history transcript
         """
-        base_prompt = self.build_system_prompt()
+        base_prompt = await self.build_system_prompt()
 
         # Load history transcript
         transcript = self._log_store.load_transcript(self.name)
