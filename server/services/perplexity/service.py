@@ -41,9 +41,9 @@ class PerplexityService:
         usage_metadata = response.get("usage", {})
         return PerplexitySearchResponse(response=response_content, citations=parsed_citations, usage_metadata=usage_metadata)
 
-    async def deep_search(self, query: str, recency: str) -> PerplexitySearchResponse:
+    async def deep_search(self, agent_name: str, query: str, recency: str) -> PerplexitySearchResponse:
         """Search the web for information with a deeper level of detail."""
-        logger.info(f"Searching the web for information with a deeper level of detail: {query}")
+        logger.info(f"[PERPLEXITY] [{agent_name}] Searching the web for information with a deeper level of detail: {query}")
         additional_payload = {"recency": recency} if recency else {}
         response = await request_chat_completion(
             model=self.deep_model,
@@ -52,13 +52,13 @@ class PerplexityService:
             additional_payload=additional_payload,
         )
         response_obj = await self.parse_response(response)
-        await self._store.insert(model=self.deep_model, query=query, recency=recency, response=response_obj)
-        logger.info(f"Deep search results: {response_obj.response[:100]}")
+        await self._store.insert(agent_name=agent_name, model=self.deep_model, query=query, recency=recency, response=response_obj)
+        logger.info(f"[PERPLEXITY] [{agent_name}] Deep search results: {response_obj.response[:100]}")
         return response_obj
 
-    async def search(self, query: str, recency: str) -> PerplexitySearchResponse:
+    async def search(self, agent_name: str, query: str, recency: str) -> PerplexitySearchResponse:
         """Search the web for information."""
-        logger.info(f"Searching the web for information: {query}")
+        logger.info(f"[PERPLEXITY] [{agent_name}] Searching the web for information: {query}")
         additional_payload = {"recency": recency} if recency else {}
         response = await request_chat_completion(
             model=self.model,
@@ -67,8 +67,8 @@ class PerplexityService:
             additional_payload=additional_payload,
         )
         response_obj = await self.parse_response(response)
-        await self._store.insert(model=self.model, query=query, recency=recency, response=response_obj)
-        logger.info(f"Search results: {response_obj.response[:100]}")
+        await self._store.insert(agent_name=agent_name, model=self.model, query=query, recency=recency, response=response_obj)
+        logger.info(f"[PERPLEXITY] [{agent_name}] Search results: {response_obj.response[:100]}")
         return response_obj
 
 _perplexity_store = PerplexityStore()

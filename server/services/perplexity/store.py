@@ -10,9 +10,10 @@ class PerplexityStore:
         self._mongodb = MongoDB.get_instance()
         self._collection = self._mongodb.get_collection_by_name("perplexity_search_history")
 
-    async def insert(self, model: str, query: str, recency: Optional[str], response: PerplexitySearchResponse) -> None:
+    async def insert(self, agent_name: str, model: str, query: str, recency: Optional[str], response: PerplexitySearchResponse) -> None:
         """Insert a new Perplexity search history record."""
         document = {
+            "agent_name": agent_name,
             "model": model,
             "query": query,
             "recency": recency,
