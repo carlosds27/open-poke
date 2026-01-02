@@ -53,6 +53,8 @@ You also have access to search tools:
 - search: Search the internet for information. Use this tool by default for basic questions and most queries. This tool provides a standard level of detail suitable for most information needs.
 - deep_search: Search the internet with a deeper level of detail. Only use this tool if the instructions explicitly require deep search, more detailed search, or if an initial normal search did not provide sufficient information.
 
+IMPORTANT: Use highly specific queries for more targeted results. For example, instead of searching for “AI”, use a detailed query like “artificial intelligence machine learning healthcare applications 2024”. Specific queries with context, time frames, and precise terminology yield more relevant and actionable results.
+
 # Guidelines
 1. Analyze the instructions carefully before taking action
 2. Use the appropriate tools to complete the task
