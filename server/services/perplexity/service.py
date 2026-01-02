@@ -1,12 +1,17 @@
+import logging
 from server.openrouter_client.client import request_chat_completion
 from server.config import get_settings
 from server.services.perplexity.models import PerplexitySearchResponse
 from typing import List, Dict, Any
+from server.services.perplexity import PerplexityStore
+
+logger = logging.getLogger("PerplexityService")
 
 class PerplexityService:
     """Service for Perplexity operations."""
 
-    def __init__(self):
+    def __init__(self, store: PerplexityStore):
+        self._store = store
         self.model = get_settings().internet_search_model
         self.deep_model = get_settings().internet_search_deep_model
         self.api_key = get_settings().openrouter_api_key
@@ -32,25 +37,34 @@ class PerplexityService:
 
     async def deep_search(self, query: str, recency: str) -> PerplexitySearchResponse:
         """Search the web for information with a deeper level of detail."""
+        logger.info(f"Searching the web for information with a deeper level of detail: {query}")
         response = await request_chat_completion(
             model=self.deep_model,
-            messages=[{"role": "system", "content": "Be detailed. Provide as much information as possible."}, {"role": "user", "content": query}],
+            messages=[{"role": "system", "content": "Be detailed. Provide as much information as possible."}, {"role": "user", "content": f"Find information about: {query}"}],
             api_key=self.api_key,
             additional_payload={"recency": recency},
         )
-        return self.parse_response(response)
+        response_obj = await self.parse_response(response)
+        await self._store.insert(model=self.deep_model, query=query, recency=recency, response=response_obj)
+        logger.info(f"Deep search results: {response_obj.response[:100]}")
+        return response_obj
 
     async def search(self, query: str, recency: str) -> PerplexitySearchResponse:
         """Search the web for information."""
+        logger.info(f"Searching the web for information: {query}")
         response = await request_chat_completion(
             model=self.model,
-            messages=[{"role": "system", "content": "Be detailed. Provide a concise summary of the query."}, {"role": "user", "content": query}],
+            messages=[{"role": "system", "content": "Be detailed. Provide a concise summary of the query."}, {"role": "user", "content": f"Find information about: {query}"}],
             api_key=self.api_key,
             additional_payload={"recency": recency},
         )
-        return self.parse_response(response)
+        response_obj = await self.parse_response(response)
+        await self._store.insert(model=self.model, query=query, recency=recency, response=response_obj)
+        logger.info(f"Search results: {response_obj.response[:100]}")
+        return response_obj
 
-_perplexity_service = PerplexityService()
+_perplexity_store = PerplexityStore()
+_perplexity_service = PerplexityService(_perplexity_store)
 
 def get_perplexity_service() -> PerplexityService:
     """Get the Perplexity service."""
