@@ -186,7 +186,7 @@
 
 1. Create a server in the `mcp_server` folder using the base `OpenPokeMCP` class for authentication and parameter validation.
 
-2. Register the server in `server/mcp_server/__init__.py`.
+2. Register the server in `server/agents/execution_agent/tools/registry.py`.
 
 3. Edit `server/agents/execution_agent/batch_manager.py` (around line 63) to include the key you just registered.
 

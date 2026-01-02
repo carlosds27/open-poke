@@ -4,21 +4,23 @@ import inspect
 import json
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from dataclasses import dataclass
-from mcp.types import Tool
 
 from .agent import ExecutionAgent
-from .tools import get_tool_schemas, get_tool_registry
+from .tools import get_tools
 from ...config import get_settings
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
-from .mcp_client import SimpleMCPClient, convert_mcp_tool_to_tool_schema, convert_mcp_tool_result_to_dict
-from server.mcp_server import get_mcp_server_mapping
+from .mcp_client import (
+    SimpleMCPClient,
+    convert_mcp_tool_to_tool_schema,
+    convert_mcp_tool_result_to_dict,
+)
 
-MCP_SERVER_MAPPING = get_mcp_server_mapping()
 
 @dataclass
 class ExecutionResult:
     """Result from an execution agent."""
+
     agent_name: str
     success: bool
     response: str
@@ -39,6 +41,7 @@ class ExecutionAgentRuntime:
         self.model = settings.execution_agent_model
         self.tools_requested = tools
         # There will be 2 types of tools:
+        self.tools_dict = get_tools()
         self.tool_schemas: List[Dict[str, Any]] = []
         # 1. MCP tools
         self.mcp_tools: List[str] = []
@@ -48,7 +51,9 @@ class ExecutionAgentRuntime:
         self.tool_name_to_app_tool: Dict[str, Callable[..., Any]] = {}
 
         if not self.api_key:
-            raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
+            raise ValueError(
+                "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
+            )
 
     async def initialize(self) -> None:
         """Initialize the execution agent runtime."""
@@ -57,14 +62,15 @@ class ExecutionAgentRuntime:
 
     async def _identify_requested_tools(self) -> None:
         """Identify the requested tools. Whether they are MCP tools or app tools."""
-        for tool in self.tools_requested:
+        for tool_name in self.tools_requested:
             # Check if in App first
-            if tool in get_tool_registry() and tool in get_tool_schemas():
-                self.app_tools.append(tool)
-            elif tool in MCP_SERVER_MAPPING:
-                self.mcp_tools.append(tool)
+            if tool_name in self.tools_dict:
+                if self.tools_dict[tool_name]["type"] == "func":
+                    self.app_tools.append(tool_name)
+                elif self.tools_dict[tool_name]["type"] == "mcp":
+                    self.mcp_tools.append(tool_name)
             else:
-                logger.warning(f"[{self.agent.name}] Unknown tool: {tool}")
+                logger.warning(f"[{self.agent.name}] Unknown tool: {tool_name}")
 
     # Main execution loop for running agent with LLM calls and tool execution
     async def execute(self, instructions: str) -> ExecutionResult:
@@ -82,11 +88,15 @@ class ExecutionAgentRuntime:
                 logger.info(
                     f"[{self.agent.name}] Requesting plan (iteration {iteration + 1})"
                 )
-                response = await self._make_llm_call(system_prompt, messages, with_tools=True)
+                response = await self._make_llm_call(
+                    system_prompt, messages, with_tools=True
+                )
                 assistant_message = response.get("choices", [{}])[0].get("message", {})
 
                 if not assistant_message:
-                    raise RuntimeError("LLM response did not include an assistant message")
+                    raise RuntimeError(
+                        "LLM response did not include an assistant message"
+                    )
 
                 raw_tool_calls = assistant_message.get("tool_calls", []) or []
                 parsed_tool_calls = self._extract_tool_calls(raw_tool_calls)
@@ -110,7 +120,9 @@ class ExecutionAgentRuntime:
 
                     if not tool_name:
                         logger.warning("Tool call missing name: %s", tool_call)
-                        failure = {"error": "Tool call missing name; unable to execute."}
+                        failure = {
+                            "error": "Tool call missing name; unable to execute."
+                        }
                         tool_message = {
                             "role": "tool",
                             "tool_call_id": call_id or "unknown_tool",
@@ -127,28 +139,38 @@ class ExecutionAgentRuntime:
                     success, result = await self._execute_tool(tool_name, tool_args)
 
                     if success:
-                        logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
+                        logger.info(
+                            f"[{self.agent.name}] Tool {tool_name} completed successfully"
+                        )
                         record_payload = self._safe_json_dump(result)
                     else:
-                        error_detail = result.get("error") if isinstance(result, dict) else str(result)
-                        logger.warning(f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}")
+                        error_detail = (
+                            result.get("error")
+                            if isinstance(result, dict)
+                            else str(result)
+                        )
+                        logger.warning(
+                            f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}"
+                        )
                         record_payload = error_detail
 
                     self.agent.record_tool_execution(
-                        tool_name,
-                        self._safe_json_dump(tool_args),
-                        record_payload
+                        tool_name, self._safe_json_dump(tool_args), record_payload
                     )
 
                     tool_message = {
                         "role": "tool",
                         "tool_call_id": call_id or tool_name,
-                        "content": self._format_tool_result(tool_name, success, result, tool_args),
+                        "content": self._format_tool_result(
+                            tool_name, success, result, tool_args
+                        ),
                     }
                     messages.append(tool_message)
 
             else:
-                raise RuntimeError("Reached tool iteration limit without final response")
+                raise RuntimeError(
+                    "Reached tool iteration limit without final response"
+                )
 
             if final_response is None:
                 raise RuntimeError("LLM did not return a final response")
@@ -159,7 +181,7 @@ class ExecutionAgentRuntime:
                 agent_name=self.agent.name,
                 success=True,
                 response=final_response,
-                tools_executed=tools_executed
+                tools_executed=tools_executed,
             )
 
         except Exception as e:
@@ -172,24 +194,30 @@ class ExecutionAgentRuntime:
                 agent_name=self.agent.name,
                 success=False,
                 response=failure_text,
-                error=error_msg
+                error=error_msg,
             )
 
     # Execute OpenRouter API call with system prompt, messages, and optional tool schemas
-    async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
+    async def _make_llm_call(
+        self, system_prompt: str, messages: List[Dict], with_tools: bool
+    ) -> Dict:
         """Make an LLM call."""
         tools_to_send = self.tool_schemas if with_tools else None
-        logger.info(f"[{self.agent.name}] Calling LLM with model: {self.model}, tools: {len(tools_to_send) if tools_to_send else 0}")
+        logger.info(
+            f"[{self.agent.name}] Calling LLM with model: {self.model}, tools: {len(tools_to_send) if tools_to_send else 0}"
+        )
         return await request_chat_completion(
             model=self.model,
             messages=messages,
             system=system_prompt,
             api_key=self.api_key,
-            tools=tools_to_send
+            tools=tools_to_send,
         )
 
     # Parse and validate tool calls from LLM response into structured format
-    def _extract_tool_calls(self, raw_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _extract_tool_calls(
+        self, raw_tools: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Extract tool calls from an assistant message."""
         tool_calls: List[Dict[str, Any]] = []
 
@@ -205,11 +233,13 @@ class ExecutionAgentRuntime:
                     args = {}
 
             if name:
-                tool_calls.append({
-                    "id": tool.get("id"),
-                    "name": name,
-                    "arguments": args,
-                })
+                tool_calls.append(
+                    {
+                        "id": tool.get("id"),
+                        "name": name,
+                        "arguments": args,
+                    }
+                )
 
         return tool_calls
 
@@ -238,7 +268,9 @@ class ExecutionAgentRuntime:
                 "result": result,
             }
         else:
-            error_detail = result.get("error") if isinstance(result, dict) else str(result)
+            error_detail = (
+                result.get("error") if isinstance(result, dict) else str(result)
+            )
             payload = {
                 "tool": tool_name,
                 "status": "error",
@@ -249,13 +281,13 @@ class ExecutionAgentRuntime:
 
     async def _init_tool_schema(self) -> None:
         for app_tool in self.app_tools:
-            tool_schema = get_tool_schemas()[app_tool]
-            tool_registry = get_tool_registry()[app_tool]
+            tool_schema = self.tools_dict[app_tool]["schema"]
+            tool_registry = self.tools_dict[app_tool]["registry"]
             self.tool_schemas.extend(tool_schema)
             self.tool_name_to_app_tool.update(tool_registry)
         for mcp_tool in self.mcp_tools:
             try:
-                mcp_url = MCP_SERVER_MAPPING[mcp_tool]
+                mcp_url = self.tools_dict[mcp_tool]["url"]
                 client = SimpleMCPClient(mcp_url=mcp_url, agent_name=self.agent.name)
                 await client.connect()
                 tools = client.get_tools()
@@ -265,8 +297,10 @@ class ExecutionAgentRuntime:
                     self.tool_schemas.append(tool_schema)
                     self.tool_name_to_mcp_client[tool_name] = client
             except Exception as e:
-                logger.error(f"[{self.agent.name}] Error initializing MCP client for {mcp_tool}: {e}")
-   
+                logger.error(
+                    f"[{self.agent.name}] Error initializing MCP client for {mcp_tool}: {e}"
+                )
+
     async def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
         """Execute a tool. Returns (success, result)."""
         if tool_name in self.tool_name_to_app_tool:
@@ -275,9 +309,11 @@ class ExecutionAgentRuntime:
             return await self._execute_mcp_tool(tool_name, arguments)
         else:
             return False, {"error": f"Unknown tool: {tool_name}"}
-   
-   # Execute tool function from registry with error handling and async support
-    async def _execute_app_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
+
+    # Execute tool function from registry with error handling and async support
+    async def _execute_app_tool(
+        self, tool_name: str, arguments: Dict
+    ) -> Tuple[bool, Any]:
         """Execute a tool. Returns (success, result)."""
         tool_func = self.tool_name_to_app_tool.get(tool_name)
         if not tool_func:
@@ -292,7 +328,9 @@ class ExecutionAgentRuntime:
             return False, {"error": str(e)}
 
     # MCP Client functions
-    async def _execute_mcp_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
+    async def _execute_mcp_tool(
+        self, tool_name: str, arguments: Dict
+    ) -> Tuple[bool, Any]:
         """Execute an MCP tool. Returns (success, result)."""
         try:
             mcp_client = self.tool_name_to_mcp_client.get(tool_name)
