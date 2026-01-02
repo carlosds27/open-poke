@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from ...services.execution import get_agent_roster
+from ...utils.timezones import now_in_user_timezone
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
 SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
@@ -13,7 +14,9 @@ SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
 # Load and return the pre-defined system prompt from markdown file
 def build_system_prompt() -> str:
     """Return the static system prompt for the interaction agent."""
-    return SYSTEM_PROMPT
+    now_time = now_in_user_timezone()
+    now_time_str = now_time.strftime("%A, %d %B, %Y at %I:%M:%S %p")
+    return SYSTEM_PROMPT.format(current_time=now_time_str)
 
 
 # Build structured message with conversation history, active agents, and current turn

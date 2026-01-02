@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 
 from ...services.execution import get_execution_agent_logs
 from ...logging_config import logger
+from ...utils.timezones import now_in_user_timezone
 
 
 # Load system prompt template from file
@@ -53,10 +54,13 @@ class ExecutionAgent:
     def build_system_prompt(self) -> str:
         """Build the system prompt for this agent."""
         agent_purpose = f"Handle tasks related to: {self.name}"
+        now_time = now_in_user_timezone()
+        now_time_str = now_time.strftime("%A, %d %B, %Y at %I:%M:%S %p")
 
         return SYSTEM_PROMPT_TEMPLATE.format(
             agent_name=self.name,
-            agent_purpose=agent_purpose
+            agent_purpose=agent_purpose,
+            current_time=now_time_str
         )
 
     # Combine base system prompt with conversation history, applying conversation limits

@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from server.utils.timezones import now_in_user_timezone
 
 
 def get_system_prompt() -> str:
     """Generate system prompt with today's date for Gmail search assistant."""
-    today = datetime.now().strftime("%Y/%m/%d")
+    now_time = now_in_user_timezone()
+    # Format the current time as a human-readable string like 'Monday, 01 January, 2024 at 03:21:15 PM'
+    current_time = now_time.strftime("%A, %d %B, %Y at %I:%M:%S %p")
 
     return (
         "You are an expert Gmail search assistant helping users find emails efficiently.\n"
         f"\n"
         f"## Current Context:\n"
-        f"- Today's date: {today}\n"
+        f"- Today's date and time: {current_time}\n"
         f"- Use this date as reference for relative time queries (e.g., 'recent', 'today', 'this week')\n"
         "\n"
         "## Available Tools:\n"
