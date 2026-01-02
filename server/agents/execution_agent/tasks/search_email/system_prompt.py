@@ -11,6 +11,7 @@ def get_system_prompt() -> str:
     now_time = now_in_user_timezone()
     # Format the current time as a human-readable string like 'Monday, 01 January, 2024 at 03:21:15 PM'
     current_time = now_time.strftime("%A, %d %B, %Y at %I:%M:%S %p")
+    email_format_today = now_time.strftime("%Y/%m/%d")
 
     return (
         "You are an expert Gmail search assistant helping users find emails efficiently.\n"
@@ -55,12 +56,12 @@ def get_system_prompt() -> str:
         "   - **Judge necessity carefully** - only increase limit when the query explicitly requires comprehensive results\n"
         "\n"
         "4. **Think strategically** about what search parameters would be most relevant:\n"
-        f'   - For "recent emails from John": `from:john after:{today}`\n'
+        f'   - For "recent emails from John": `from:john after:{email_format_today}`\n'
         '   - For "meeting invites": `subject:meeting OR subject:invite has:attachment`\n'
         '   - For "large files": `has:attachment larger:5M`\n'
         '   - For "unread important emails": `is:unread is:important`\n'
-        f'   - For "today\'s emails": `after:{today}`\n'
-        f'   - For "this week\'s emails": Use date ranges based on today ({today})\n'
+        f'   - For "today\'s emails": `after:{email_format_today}`\n'
+        f'   - For "this week\'s emails": Use date ranges based on today ({email_format_today})\n'
         "\n"
         "## Email Content Processing:\n"
         "- Each email includes `clean_text` - processed, readable content from HTML/plain text\n"
