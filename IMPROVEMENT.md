@@ -124,7 +124,7 @@
 
 - **Previously:** The execution agent had access to all tools immediately, even if they weren't needed for the current task (e.g., reminder agents had access to Gmail tools which they never use).
 - **Now:** The execution agent initially sees tools as "folders" (high-level tool categories). To access the actual tools within a folder, the agent must "expand" the folder by calling a dummy function. This grants full access to the tools within that category.
-- Each agent now has a tool state (in MongoDB), which keeps track of which tools the agent has full access to. This is then used to define the tool schemas that are being sent to the LLM and also define the prompt regarding the tools. 
+- Each agent now has a tool state (in MongoDB), which keeps track of which tools the agent has full access to. This is then used to define the tool schemas that are being sent to the LLM and also define the prompt regarding the tools.
 
 **Benefits:**
 
@@ -226,7 +226,18 @@
    ```
 
 **Note:** Make sure to use `.venv` (virtual environment) when running the backend or MCP servers.
-**Note:** Don't forget to change the copy the `.env.example` to `.env` with the appropriate keys
+
+**Note:** Don't forget to copy the `.env.example` to `.env` and fill in the appropriate keys.
+
+**Note:** In MongoDB, don't forget to create a search index with the following configuration:
+
+- Type: `vectorSearch`
+- Index name: `agent_description_vector_index`
+- Index field: `embedding`
+- Similarity: `cosine`
+- Embedding size: `1536`
+
+(if you want to change these configurations, you can modify it in `server/services/execution/roster.py:21`)
 
 ## 🔮 Future Improvements
 
