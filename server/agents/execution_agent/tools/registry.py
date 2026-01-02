@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from . import gmail, triggers
+from . import gmail
 from ..tasks.search_email.tool import build_registry as _build_email_search_registry
 from ..tasks.search_email.schemas import get_schemas as get_email_search_schemas
 
