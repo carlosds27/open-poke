@@ -44,11 +44,12 @@ class PerplexityService:
     async def deep_search(self, query: str, recency: str) -> PerplexitySearchResponse:
         """Search the web for information with a deeper level of detail."""
         logger.info(f"Searching the web for information with a deeper level of detail: {query}")
+        additional_payload = {"recency": recency} if recency else {}
         response = await request_chat_completion(
             model=self.deep_model,
             messages=[{"role": "system", "content": "Be detailed. Provide as much information as possible."}, {"role": "user", "content": f"Find information about: {query}"}],
             api_key=self.api_key,
-            additional_payload={"recency": recency},
+            additional_payload=additional_payload,
         )
         response_obj = await self.parse_response(response)
         await self._store.insert(model=self.deep_model, query=query, recency=recency, response=response_obj)
@@ -58,11 +59,12 @@ class PerplexityService:
     async def search(self, query: str, recency: str) -> PerplexitySearchResponse:
         """Search the web for information."""
         logger.info(f"Searching the web for information: {query}")
+        additional_payload = {"recency": recency} if recency else {}
         response = await request_chat_completion(
             model=self.model,
             messages=[{"role": "system", "content": "Be detailed. Provide a concise summary of the query."}, {"role": "user", "content": f"Find information about: {query}"}],
             api_key=self.api_key,
-            additional_payload={"recency": recency},
+            additional_payload=additional_payload,
         )
         response_obj = await self.parse_response(response)
         await self._store.insert(model=self.model, query=query, recency=recency, response=response_obj)
