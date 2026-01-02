@@ -3,5 +3,5 @@ from typing import List, Dict, Any
 
 class PerplexitySearchResponse(BaseModel):
     response: str
-    citations: List[str]
+    citations: List[Dict[str, str]]
     usage_metadata: Dict[str, Any]

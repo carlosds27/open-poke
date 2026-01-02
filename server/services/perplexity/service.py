@@ -18,10 +18,11 @@ class PerplexityService:
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
 
-    def _parse_citations(self, citations: List[Dict[str, Any]]) -> List[str]:
+    def _parse_citations(self, citations: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         parsed_citations: List[Dict[str, str]] = []
-        for citation in citations:
+        for id, citation in enumerate(citations):
             parsed_citations.append({
+                "id": id + 1,
                 "title": citation.get("url_citation", {}).get("title", ""),
                 "url": citation.get("url_citation", {}).get("url", ""),
             })
