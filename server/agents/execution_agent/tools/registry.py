@@ -16,7 +16,7 @@ def get_tools() -> Dict[str, Any]:
         "gmail_tool": {
             "type": "func",
             "schema": gmail.get_schemas() + get_email_search_schemas(),
-            "registry": gmail.build_registry() | _build_email_search_registry,
+            "registry": gmail.build_registry() | _build_email_search_registry(),
         },
         "trigger_tool": {
             "type": "mcp",
