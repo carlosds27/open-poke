@@ -3,7 +3,7 @@ from server.openrouter_client.client import request_chat_completion
 from server.config import get_settings
 from server.services.perplexity.models import PerplexitySearchResponse
 from typing import List, Dict, Any
-from server.services.perplexity import PerplexityStore
+from server.services.perplexity.store import PerplexityStore
 
 logger = logging.getLogger("PerplexityService")
 
