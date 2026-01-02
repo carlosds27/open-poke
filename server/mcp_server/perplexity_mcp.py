@@ -13,7 +13,7 @@ _PERPLEXITY_SERVICE = get_perplexity_service()
 async def search(
     agent_name: Annotated[Optional[str], "Leave this blank."],
     query: Annotated[str, "The query to search for."],
-    recency: Annotated[Optional[str], "The recency of the search results. Can be 'day', 'week', 'month', or 'year'."],
+    recency: Annotated[Optional[str], "The recency of the search results. Can be 'day', 'week', 'month', or 'year'. If not needed, leave it blank."],
 ) -> Dict[str, Any]:
     """Search the web for information. Default level of detail."""
     if recency is not None and recency not in ['day', 'week', 'month', 'year']:
@@ -25,7 +25,7 @@ async def search(
 async def deep_search(
     agent_name: Annotated[Optional[str], "Leave this blank."],
     query: Annotated[str, "The query to search for."],
-    recency: Annotated[Optional[str], "The recency of the search results. Can be 'day', 'week', 'month', or 'year'."],
+    recency: Annotated[Optional[str], "The recency of the search results. Can be 'day', 'week', 'month', or 'year'. If not needed, leave it blank."],
 ) -> Dict[str, Any]:
     """Search the web for information with a deeper level of detail."""
     if recency is not None and recency not in ['day', 'week', 'month', 'year']:
