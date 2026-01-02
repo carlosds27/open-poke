@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ from .utils import (
 
 
 MISSED_TRIGGER_GRACE_PERIOD = timedelta(minutes=5)
+logger = logging.getLogger("TriggerService")
 
 
 class TriggerService:
@@ -260,6 +262,7 @@ class TriggerService:
 
     def clear_all(self) -> None:
         self._store.clear_all()
+        logger.info("Cleared all triggers")
 
     def _compute_next_fire(
         self,

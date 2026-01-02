@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from ...logging_config import logger
 from ...utils.timezones import now_in_user_timezone
 from .models import BookkeepingRecord
 from .store import BookkeepingStore
+
+logger = logging.getLogger("BookkeepingService")
 
 
 class BookkeepingService:
@@ -102,6 +104,7 @@ class BookkeepingService:
     def clear_all(self) -> None:
         """Clear all bookkeeping records."""
         self._store.clear_all()
+        logger.info("Cleared all bookkeeping records")
 
     def list_records(
         self,

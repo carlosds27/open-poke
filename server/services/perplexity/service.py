@@ -27,6 +27,11 @@ class PerplexityService:
             })
         return parsed_citations
 
+    async def clear_all(self) -> None:
+        """Clear all Perplexity search history records."""
+        await self._store.clear_all()
+        logger.info("Cleared all Perplexity search history records")
+
     async def parse_response(self, response: Dict[str, Any]) -> PerplexitySearchResponse:
         """Parse the response from the Perplexity API."""
         response_content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
