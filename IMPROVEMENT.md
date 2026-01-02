@@ -118,15 +118,20 @@
 
 **Context:** The app currently exposes all tools to the execution agent. As the number of tools grows, the agent will have more tools to choose from, which might cause hallucination (wrong tool calls) and also increase token usage.
 
-**Summary:** The app will only expose tools as "folders" where the agent can "open" to gain access to more tools. This way, the number of tool choices will increase as the instruction requires more capabilities.
+**Summary:** The app now only exposes tools as "folders" where the agent can "expand" to gain access to more tools. This way, the number of tool choices will increase as the instruction requires more capabilities.
 
 **What Changed:**
 
-- TODO TO FILL IN LATER
+- **Previously:** The execution agent had access to all tools immediately, even if they weren't needed for the current task (e.g., reminder agents had access to Gmail tools which they never use).
+- **Now:** The execution agent initially sees tools as "folders" (high-level tool categories). To access the actual tools within a folder, the agent must "expand" the folder by calling a dummy function. This grants full access to the tools within that category.
+- Each agent now has a tool state (in MongoDB), which keeps track of which tools the agent has full access to. This is then used to define the tool schemas that are being sent to the LLM and also define the prompt regarding the tools. 
 
 **Benefits:**
 
-- TODO TO FILL IN LATER
+- Reduces the number of tools per request, which decreases token usage
+- Reduces hallucination of tools since there are fewer tools available at any given time
+- Improves tool selection accuracy by presenting only relevant tools based on the agent's current needs
+- Enables more efficient context management as agents only load tools they actually need
 
 ---
 
@@ -186,9 +191,9 @@
 
 1. Create a server in the `mcp_server` folder using the base `OpenPokeMCP` class for authentication and parameter validation.
 
-2. Register the server in `server/agents/execution_agent/tools/registry.py`.
+2. Register the server in `server/agents/execution_agent/tools/registry.py` with `"type": "mcp"`, a description of the tools, and the MCP server URL.
 
-3. Edit `server/agents/execution_agent/batch_manager.py` (around line 63) to include the key you just registered.
+3. Add a prompt related to the tools in `server/agents/execution_agent/tools/prompt.py` and register it in the `TOOL_PROMPTS` with the same key name as in step (2).
 
 4. Done! Start the MCP server, and the execution agent should automatically connect to it when generating responses.
 
@@ -221,6 +226,7 @@
    ```
 
 **Note:** Make sure to use `.venv` (virtual environment) when running the backend or MCP servers.
+**Note:** Don't forget to change the copy the `.env.example` to `.env` with the appropriate keys
 
 ## 🔮 Future Improvements
 
